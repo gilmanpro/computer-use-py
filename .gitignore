@@ -1,0 +1,5 @@
+# Temporales de la skill computer-use-py: capturas PNG, banderas ABORT/PAUSA,
+# pruebas y caches. JAMAS deben publicarse.
+.tmp/
+__pycache__/
+*.pyc
