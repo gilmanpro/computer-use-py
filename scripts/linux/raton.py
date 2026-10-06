@@ -50,7 +50,7 @@ import time
 
 import _compartido_linux as c
 
-_BOTONES = ("left", "right", "middle")
+_BOTONES = c.BOTONES  # contrato JSON generico de la skill (vive en _core)
 # Codigos de click ydotool (man): 0x00 LEFT / 0x01 RIGHT / 0x02 MIDDLE mas
 # mascara 0x40 down | 0x80 up. 0xC0 verbatim; 0xC1/0xC2/0x4x/0x8x derivados
 # de la regla documentada [runtime].
@@ -214,7 +214,7 @@ def cmd_arrastrar(args):
     m1 = _guard_destino(args.x1, args.y1)
     m2 = _guard_destino(args.x2, args.y2)
     sesion = c.deteccion_sesion()
-    duracion = min(max(args.duracion, 0.1), 30.0)
+    duracion = c.cap_duracion(args.duracion)
     if sesion == "x11":
         pa = _pyautogui()
         pasos = max(10, min(int(duracion / 0.01), 200))

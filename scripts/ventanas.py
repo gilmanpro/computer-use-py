@@ -1,5 +1,10 @@
 # -*- coding: utf-8 -*-
-"""ventanas.py — Ventanas de Windows via pygetwindow (skill computer-use-py).
+"""ventanas.py — Ventanas (skill computer-use-py; ruta Windows via pygetwindow).
+
+ENTRADA MULTI-OS (FASE SEG2): `python scripts/ventanas.py ...` vale en los 3
+SO — en Windows ejecuta esta ruta nativa (validada en escritorio real); en
+Linux/macOS enruta TRANSPARENTemente al motor de su rama (scripts/linux|macos/)
+re-emitiendo su JSON y su exit code; plataforma desconocida responde JSON + rc 2.
 
 PyAutoGUI retiro su propia API de ventanas en 0.9.54: lo unico que existe
 es la re-exportacion Windows-only de pygetwindow, asi que este script usa
@@ -51,6 +56,11 @@ Notas verificadas:
 
 Salida: JSON por stdout; errores JSON con "error".
 
+Campo "via" (decision FASE TEST-A, aditivo): los JSON de listar/foco/acciones
+incluyen "via": "pygetwindow" — declara la fuente real de los datos (en esta
+rama Windows es pygetwindow sobre Win32), igual que raton.py posicion ya
+declara su via. Ningun consumidor existente se rompe: es una clave MAS.
+
 Subcomandos:
   listar      Todas las ventanas: titulo + rectangulo + estado.
   foco        Ventana foreground activa (quien recibe el teclado).
@@ -62,7 +72,7 @@ Subcomandos:
   abrir       Lanza app/URL/archivo y (opcional) espera su ventana nueva.
 
 Ejemplos (desde la carpeta computer-use-py):
-  py scripts/ventanas.py listar
+  py scripts/ventanas.py listar              # Windows (python3 en otros SO)
   py scripts/ventanas.py foco
   py scripts/ventanas.py activar "Bloc de notas"
   py scripts/ventanas.py cerrar "Ventana de confirmacion"
@@ -76,8 +86,15 @@ import os
 import re
 import shutil
 import subprocess
+import sys
 
-import _compartido as c  # trae el DPI del proceso fijado antes de cualquier import
+# Deteccion de plataforma ANTES de los imports exclusivos Windows.
+if sys.platform != "win32":
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    import _core
+    _core.enrutar("ventanas.py")  # nunca retorna en linux/darwin/desconocida
+
+import glue_windows as c  # trae el DPI del proceso fijado antes de cualquier import
 import pyautogui
 import pygetwindow as gw
 
@@ -146,6 +163,7 @@ def cmd_listar(args):
         "total": len(ventanas),
         "sin_titulo_omitidas": vacios,
         "ventanas": ventanas,
+        "via": "pygetwindow",
         "marco": c.MARCO,
         "nota": "rectangulo en el ESPACIO DE PANTALLA VIRTUAL (GetWindowRect: "
                 "negativo hacia la izquierda/arriba con monitores vecinos); "
@@ -166,6 +184,7 @@ def cmd_foco(args):
         c.json_out({
             "activa": None,
             "ventana": None,
+            "via": "pygetwindow",
             "marco": c.MARCO,
             "nota": "no hay ventana foreground (pantalla de bloqueo/UAC?): NO "
                     "teclees aun; re-verifica con pantalla.py capturar",
@@ -173,6 +192,7 @@ def cmd_foco(args):
         return
     c.json_out({
         "activa": True,
+        "via": "pygetwindow",
         "titulo": ventana.title,
         "rect": _rect(ventana),
         "estado": _estado(ventana),
@@ -227,6 +247,7 @@ def _accion(titulo, nombre_metodo, mensaje_aviso):
     item = {
         "ok": True,
         "accion": nombre_metodo,
+        "via": "pygetwindow",
         "titulo": ventana.title,
         "rect": _rect(ventana),
         "estado": _estado(ventana),
@@ -272,7 +293,7 @@ def cmd_cerrar(args):
 
 # Esquema de URL: >=2 letras/digitos y +-. antes de ':' (descarta "C:\ruta")
 # o prefijo "www.". VERIFICADO en runtime: startfile maneja ambos.
-_ESQUEMA_URL = re.compile(r"^(?:[A-Za-z][A-Za-z0-9+.\-]{1,}:|www\.)")
+_ESQUEMA_URL = c.ESQUEMA_URL  # clasificador URL generico (vive en _core)
 _LOTE = (".bat", ".cmd")  # Popen shell=False las rechaza: van por startfile
 
 

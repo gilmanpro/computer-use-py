@@ -1,8 +1,12 @@
 # -*- coding: utf-8 -*-
-"""Utilidades comunes de los scripts CLI de la skill computer-use-py.
+"""glue_windows.py — GLUE EXCLUSIVO de Windows de la skill computer-use-py.
 
-Cada script de la skill importa este modulo PRIMERO. Efectos de borde
-deliberados al importarse:
+FASE SEG2: los CLIs (monitores/pantalla/teclado/raton/ventanas/vigilar) viven
+en scripts/ raiz y son multi-OS: en win32 importan ESTE modulo (ruta historica
+intacta); en linux/darwin enrutan a scripts/linux|macos sin llegar aqui. La
+pieza exclusivamente Windows restante en scripts/windows/ es
+win_especiales.py, que tambien importa este glue. Cada CLI lo importa PRIMERO.
+Efectos de borde deliberados al importarse:
 
 1. DPI: llama a SetProcessDpiAwareness(2) (process-per-monitor) ANTES de
    importar pyautogui. PyAutoGUI por defecto marca el proceso solo como
@@ -27,19 +31,30 @@ lecturas (primario y virtual) y su nota. Ver references/monitores-multi.md.
 FAILSAFE: las 4 esquinas que abortan son las del monitor PRIMARIO (semantica
 de pyautogui, no negociable). En un secundario NO hay esquina failsafe: el
 freno alli es la tecla de panico de vigilar.py o Ctrl+C en la consola.
+
+FASE SEG: lo que era identico en las 3 ramas (Parser, banderas ABORT/PAUSA,
+validaciones de args, esperas, color/combos, geometria de rects, tablas y
+convencion de destino de capturas) VIVE en scripts/_core.py —el generico
+multi-OS— y aqui solo queda GLUE DE WINDOWS (guard, DPI, pyautogui, mapa de
+monitores por ctypes, marco) que REEXPORTA _core para que los CLIs sigan
+llamando c.<nombre> sin cambios. Comportamiento win32 IDENTICO al de la rama
+validada en escritorio real (regla nº1 de FASE SEG2).
 """
 
 import json
 import sys
 
 # --- Guard de plataforma (DEBE ir antes de ctypes.wintypes y de pyautogui) --
-# scripts/ es la rama WINDOWS de la skill. En otro SO hay que usar
-# scripts/linux/ o scripts/macos/: sin este guard el fallo seria un
-# AttributeError de windll o un traceback de pyautogui, no el JSON canonico.
+# Este glue es EXCLUSIVO Windows; el resto del flujo usa scripts/ (los CLIs de
+# la raiz enrutan solos a su rama y nunca deberian llegar aqui). Si alguien lo
+# importa directamente en otro SO, el fallo seria un AttributeError de windll o
+# un traceback de pyautogui: este guard lo convierte en el JSON canonico (rc 2,
+# mismo contrato que las ramas linux/ y macos/).
 if sys.platform != "win32":
     print(json.dumps({
-        "error": "scripts/ es la rama WINDOWS; usa scripts/linux/ o "
-                 "scripts/macos/ segun tu SO",
+        "error": "glue_windows.py es exclusivo WINDOWS; el resto del flujo "
+                 "usa scripts/ (los CLIs de la raiz enrutan a la rama de tu "
+                 "SO; para la suite: python autotest.py)",
         "sistema_operativo": sys.platform,
         # P0-4: `plataforma` canonica tambien en el guard (contrato uniforme).
         "plataforma": {"win32": "win", "linux": "linux",
@@ -47,7 +62,6 @@ if sys.platform != "win32":
     }, ensure_ascii=False))
     sys.exit(2)
 
-import argparse
 import ctypes
 import os
 import time  # reexportado: los scripts duermen con `c.time.sleep(...)`
@@ -81,11 +95,20 @@ import pyautogui  # noqa: E402  (deliberado: despues de fijar el DPI)
 pyautogui.FAILSAFE = True   # NO NEGOCIABLE: las 4 esquinas abortan.
 pyautogui.PAUSE = 0.15      # >= 0.1 s entre funciones publicas.
 
-# --- Rutas de la skill y helpers stdlib-puro compartidos (SPEC P2-1) -------
-# _core.py vive en scripts/ y es stdlib-puro (seguro en cualquier SO): aqui se
-# reexporta para que los scripts sigan llamando c.json_out/c.fail/... con
-# comportamiento IDENTICO al historico. json_out/fail inyectan `plataforma`
-# (P0-4) en todo JSON que no la traiga.
+# --- Helpers GENERICO multi-OS (scripts/_core.py) — reexportados -----------
+# _core.py vive en scripts/ JUNTO a este glue (desde FASE SEG2 el glue tambien
+# esta en la raiz de scripts/, no en la rama windows/) y es stdlib-puro (seguro
+# en cualquier SO): aqui se reexporta para que los CLIs sigan llamando
+# c.json_out/c.fail/... con comportamiento IDENTICO al historico. RAIZ_SKILL,
+# DIR_TMP y las banderas las fija _core contra SU propio __file__ (scripts/),
+# apuntando a computer-use-py/.tmp/. El sys.path.insert del propio directorio
+# cubre el caso de import desde fuera (p. ej. win_especiales.py en la rama).
+# json_out/fail inyectan `plataforma` (P0-4) en todo JSON que no la traiga.
+# FASE SEG: a _core se movio TODO lo que estaba duplicado palabra-por-palabra
+# con linux/ y macos/ (Parser, banderas, validaciones de args, bucles de
+# espera, color/combos, geometria de rects, tablas y destino de capturas).
+# El autotest de estructura exige que ningun nombre de HELPERS_COMUNES se
+# redefina aqui: solo se reexporta con la forma `nombre = _core.nombre`.
 _DIR_SCRIPTS = os.path.dirname(os.path.abspath(__file__))
 if _DIR_SCRIPTS not in sys.path:
     sys.path.insert(0, _DIR_SCRIPTS)
@@ -103,53 +126,40 @@ tocar = _core.tocar
 borrar = _core.borrar
 asegurar_capturas = _core.asegurar_capturas
 plataforma = _core.plataforma
+Parser = _core.Parser
+checar_abort = _core.checar_abort
+checar_pausa = _core.checar_pausa
+checar_aborto_espera = _core.checar_aborto_espera
+dormir = _core.dormir
+esperar_color = _core.esperar_color
+cap_ms = _core.cap_ms
+cap_timeout_esperar = _core.cap_timeout_esperar
+cap_segundos_mantener = _core.cap_segundos_mantener
+cap_duracion = _core.cap_duracion
+validar_segundos = _core.validar_segundos
+validar_tolerancia = _core.validar_tolerancia
+validar_confidence = _core.validar_confidence
+checar_max_lado = _core.checar_max_lado
+checar_args_esperar = _core.checar_args_esperar
+parsear_color = _core.parsear_color
+tiene_no_ascii = _core.tiene_no_ascii
+partes_combo = _core.partes_combo
+resolver_monitor = _core.resolver_monitor
+monitor_contiene = _core.monitor_contiene
+dentro_del_bounding = _core.dentro_del_bounding
+bounding_de = _core.bounding_de
+escalas_thumbnail = _core.escalas_thumbnail
+ruta_destino_captura = _core.ruta_destino_captura
+ALIAS_TECLAS_PYNPUT = _core.ALIAS_TECLAS_PYNPUT
+ESQUEMA_URL = _core.ESQUEMA_URL
+BOTONES = _core.BOTONES
 
 # Marco de coordenadas canonico de la rama (P0-4: enum cerrado).
 MARCO = "px_fisicos_virtual"
 
-
-class Parser(argparse.ArgumentParser):
-    """argparse cuyos errores salen como JSON canonico (P1-7).
-
-    subprocess inviable: un `{"error"}` legible vale mas que un stderr de
-    argparse con exit 2. `error()` se dispara en subcomando inexistente,
-    flag invalido, valor de tipo erroneo o argumento requerido que falta.
-    """
-
-    def error(self, message):
-        fail("argumentos invalidos: %s" % message,
-             uso=self.format_usage().strip())
-
-
-def checar_abort(motivo="interrumpido"):
-    """Corta la accion si el humano pidio parar (bandera ABORT de vigilar.py).
-
-    Sin bandera, coste = un os.path.exists (comportamiento intacto)."""
-    if os.path.exists(ARCHIVO_ABORT):
-        fail("%s: existe la bandera ABORT del .tmp de ESTA skill "
-             "(vigilar.py): un humano pidio parar. Captura la pantalla y "
-             "pregunta antes de continuar." % motivo,
-             bandera=ARCHIVO_ABORT)
-
-
-def checar_pausa(espera_max=300.0):
-    """Freno suave P1-5: mientras exista .tmp/PAUSA (vigilar --pausar-si-humano)
-    la accion SE ESPERA (poll 0.2 s, tope 300 s) en vez de ejecutarse. ABORT
-    manda sobre PAUSA. Sin bandera, coste = un os.path.exists: la temporizacion
-    validada de inyeccion NO se altera (esto se llama en ARRANQUE de cada
-    accion y en los polls de espera, nunca dentro de los pasos interpolados).
-    """
-    if not os.path.exists(ARCHIVO_PAUSA):
-        return
-    inicio = time.time()
-    while os.path.exists(ARCHIVO_PAUSA):
-        checar_abort("pausa interrumpida")  # ABORT tiene prioridad
-        if time.time() - inicio > espera_max:
-            fail("PAUSA activa mas de %d s (bandera %s): atiende al usuario, "
-                 "borra la bandera y relanza, o usa ABORT para cortar la "
-                 "secuencia." % (int(espera_max), ARCHIVO_PAUSA),
-                 bandera_pausa=ARCHIVO_PAUSA)
-        time.sleep(0.2)
+# Parser, checar_abort, checar_pausa y checar_aborto_espera: moved a _core
+# (copias identicas en las 3 ramas) y reexportados arriba; sus textos
+# historicos de esta rama son ahora los CANONICOS del multiplete.
 
 
 def tamano_pantalla():
@@ -244,62 +254,38 @@ def _monitor_contiene(x, y):
     """Monitor cuyo rcMonitor contiene a (x, y) virtuales, o None.
 
     None = el punto cae fuera de todo monitor (hueco del bounding virtual
-    en monitores desalineados, o coordenadas fuera del todo).
+    en monitores desalineados, o coordenadas fuera del todo). La formula del
+    rectangulo es generica (_core.monitor_contiene); lo de aqui es la fuente
+    ctypes de esta rama.
     """
-    xi, yi = int(x), int(y)
-    for m in monitores():
-        if m["izq"] <= xi < m["der"] and m["top"] <= yi < m["bot"]:
-            return m
-    return None
+    return _core.monitor_contiene(monitores(), x, y)
 
 
 def dentro_de_virtual(x, y):
     """True si (x, y) cae dentro del bounding de la pantalla virtual.
 
     Marco nuevo de la skill: NO validar ya contra el primario. En un equipo
-    de un solo monitor coincide con dentro_de_pantalla().
+    de un solo monitor coincide con dentro_de_pantalla(). La comparacion es
+    generica (_core.dentro_del_bounding); el SM_*virtual sigue siendo de aqui.
     """
-    v = tamano_virtual()
-    return (v["x"] <= int(x) < v["x"] + v["ancho"]
-            and v["y"] <= int(y) < v["y"] + v["alto"])
-
-
-# Nombres de tecla de pyautogui (Windows) -> miembros del enum Key de pynput
-# 1.8.2 (lista verificada en el backend _win32 del digest de pynput). Sirve
-# como reserva cuando pyautogui no reconoce una tecla (p. ej. variantes
-# multimedia con otro nombre).
-_ALIAS_TECLAS_PYNPUT = {
-    "escape": "esc", "control": "ctrl", "ctr": "ctrl",
-    "windows": "cmd", "win": "cmd", "super": "cmd", "meta": "cmd",
-    "winleft": "cmd_l", "winright": "cmd_r",
-    "del": "delete", "supr": "delete",
-    "espacio": "space", "intro": "enter", "retorno": "enter",
-    "pageup": "page_up", "pagedown": "page_down", "pgup": "page_up",
-    "pgdn": "page_down",
-    "printscreen": "print_screen", "prtsc": "print_screen", "sysrq": "print_screen",
-    "apps": "menu", "altgr": "alt_gr",
-    "break": "pause",
-    # Teclas multimedia nombradas por pyautogui en Windows (digest pyautogui
-    # seccion 3) -> equivalentes Key.media_* de pynput (digest pynput seccion 3).
-    "volumemute": "media_volume_mute", "mute": "media_volume_mute",
-    "volumedown": "media_volume_down", "volumeup": "media_volume_up",
-    "playpause": "media_play_pause", "nexttrack": "media_next",
-    "prevtrack": "media_previous", "stop": "media_stop",
-}
+    return _core.dentro_del_bounding(tamano_virtual(), x, y)
 
 
 def tecla_pynput(nombre):
     """Devuelve el miembro pynput.keyboard.Key para un nombre dado, o None.
 
     Acepta el nombre canonico de Key (ej. 'esc', 'ctrl_l',
-    'media_play_pause') o alias habituales de pyautogui/espanol.
+    'media_play_pause') o     alias habituales de pyautogui/espanol. La tabla de
+    alias ALIAS_TECLAS_PYNPUT es la copia generica de _core (identica en
+    win/linux); este envoltorio se queda en el glue porque pynput NO es
+    stdlib-pura: importar pynput desde _core estaria prohibido.
     """
     from pynput import keyboard
 
     if nombre is None:
         return None
     n = str(nombre).strip().lower()
-    n = _ALIAS_TECLAS_PYNPUT.get(n, n)
+    n = ALIAS_TECLAS_PYNPUT.get(n, n)
     return getattr(keyboard.Key, n, None)
 
 

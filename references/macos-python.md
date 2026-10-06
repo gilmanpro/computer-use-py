@@ -261,8 +261,9 @@ idéntico al dominio Windows.
   kCGHIDEventTap, CGEventKeyboardSetUnicodeString, AXIsProcessTrusted,
   kCGSessionEventTap, DARWIN_CATCH_UP_TIME=0.01 (`__init__.py:567`).
 - pyobjc-framework-Quartz 12.2.2, requires_python >=3.10 →
-  https://pypi.org/project/pyobjc-framework-Quartz/ (JSON local
-  `.tmp/pypi_quartz.json` de la fase de investigación).
+  https://pypi.org/project/pyobjc-framework-Quartz/ (la descarga JSON de ese
+  fetch era un scratch temporal de la fase de investigación; ya no se
+  conserva en `.tmp/`).
 
 **INCERTO/[runtime] (procedimiento en cada §):** unidades/negativos de -R;
 orden -D n; 2×/3× retina por panel; Screen Recording negro; números -1743/

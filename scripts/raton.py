@@ -1,6 +1,11 @@
 # -*- coding: utf-8 -*-
 """raton.py — Ratón de la skill computer-use-py (PyAutoGUI + pynput).
 
+ENTRADA MULTI-OS (FASE SEG2): `python scripts/raton.py ...` vale en los 3 SO —
+en Windows ejecuta esta ruta nativa (validada en escritorio real); en
+Linux/macOS enruta TRANSPARENTemente al motor de su rama (scripts/linux|macos/)
+re-emitiendo su JSON y su exit code; plataforma desconocida responde JSON + rc 2.
+
 Division de trabajo (piramide de la skill):
 - Mover/clic/arrastrar DENTRO DEL MONITOR PRIMARIO: PyAutoGUI (moveTo con
   tween, click con x,y) — comportamiento historico intacto.
@@ -56,22 +61,30 @@ Subcomandos:
   posicion   Lectura del cursor en ambos marcos (pyautogui y pynput).
 
 Ejemplos (desde la carpeta computer-use-py):
-  py scripts/raton.py mover 640 300 --duracion 0.2
+  py scripts/raton.py mover 640 300 --duracion 0.2    # Windows (python3 en otros SO)
   py scripts/raton.py click --x 640 --y 300 --boton right
-  py scripts/raton.py click --x -800 --y 300        # secundario: pynput
+  py scripts/raton.py click --x -800 --y 300          # secundario: pynput
   py scripts/raton.py arrastrar 100 100 400 350 --duracion 0.5
-  py scripts/raton.py arrastrar -800 400 300 400    # secundario->primario
+  py scripts/raton.py arrastrar -800 400 300 400      # secundario->primario
   py scripts/raton.py scroll --vertical -5 --x 800 --y 400
   py scripts/raton.py scroll --horizontal 3
 """
 
 import argparse
+import os
+import sys
 import time
 
-import _compartido as c  # importa pyautogui ya con DPI + FAILSAFE + PAUSE
+# Deteccion de plataforma ANTES de los imports exclusivos Windows.
+if sys.platform != "win32":
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    import _core
+    _core.enrutar("raton.py")  # nunca retorna en linux/darwin/desconocida
+
+import glue_windows as c  # importa pyautogui ya con DPI + FAILSAFE + PAUSE
 import pyautogui
 
-_BOTONES = ("left", "right", "middle")
+_BOTONES = c.BOTONES  # contrato JSON generico de la skill (vive en _core)
 
 
 def _guard_destino(x, y):
@@ -193,7 +206,7 @@ def cmd_arrastrar(args):
                validos=list(_BOTONES))
     r1 = _guard_destino(args.x1, args.y1)
     r2 = _guard_destino(args.x2, args.y2)
-    duracion = min(max(args.duracion, 0.1), 30.0)
+    duracion = c.cap_duracion(args.duracion)
     # Trayectoria interpolada a mano (press -> movimientos con sueno ->
     # release): pynput no trae drag y pyautogui.dragTo no deja controlar el
     # ritmo de los pasos intermedios.

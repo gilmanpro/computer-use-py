@@ -57,7 +57,7 @@
   rcMonitor, rcWork, dwFlags}` + `WCHAR szDevice[CCHDEVICENAME]` (=32).
   https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-getmonitorinfoa
   https://learn.microsoft.com/en-us/windows/win32/api/winuser/ns-winuser-monitorinfoexw
-- Implementado en `scripts/_compartido.py` (`monitores()`, `tamano_virtual()`,
+- Implementado en `scripts/glue_windows.py` (`monitores()`, `tamano_virtual()`,
   `_monitor_contiene(x, y)`, `dentro_de_virtual(x, y)`) con ctypes puro y el
   DPI per-monitor fijado ANTES de medir; la CLI es `scripts/monitores.py`
   (`listar`, `cursor` — el cursor se lee con `GetCursorPos`, coordenadas
@@ -192,7 +192,7 @@
 - `SetProcessDpiAwareness` (shcore) y `GetDpiForMonitor` devuelven 404 en
   Learn (slugs reubicados/retirados; sucesora documentada:
   `SetProcessDpiAwarenessContext`); su semántica queda verificada de forma
-  indirecta + en runtime por la skill: `_compartido.py` fija
+  indirecta + en runtime por la skill: `glue_windows.py` fija
   `SetProcessDpiAwareness(2)` ANTES de importar pyautogui. Decisión de la
   fase H: MANTENER el valor 2, no migrar a PER_MONITOR_AWARE_V2 (−4).
 - Escalas mixtas entre monitores (p. ej. 100 % + 150 %): [runtime] revalidar

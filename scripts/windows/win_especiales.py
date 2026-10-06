@@ -1,12 +1,15 @@
 # -*- coding: utf-8 -*-
 """win_especiales.py — Funciones EXCLUSIVAS de Windows (skill computer-use-py).
 
-Entregable de la SECCION 4 del SPEC de integracion: lo unicamente-
-ventana/proceso/portapapeles/DPI de Windows que NO es alcanzable con los
-scripts actuales de la skill. Todo responde el JSON canonico de la skill
-(plataforma/marco incluidos via _compartido) y los errores son SIEMPRE JSON
-(nunca stderr de argparse). Guard de plataforma: en Linux/macOS sale JSON
-"usa scripts/linux/ o scripts/macos/" con exit 2 (importa _compartido primero).
+Unico archivo que queda en scripts/windows/ (FASE SEG2): el resto del flujo,
+incluido este CLI en Windows, pasa por los CLIs de scripts/ raiz. Entregable de
+la SECCION 4 del SPEC de integracion: lo unicamente-ventana/proceso/
+portapapeles/DPI de Windows que NO es alcanzable con los scripts actuales de la
+skill. Todo responde el JSON canonico de la skill (plataforma/marco incluidos
+via glue_windows) y los errores son SIEMPRE JSON (nunca stderr de argparse).
+Guard de plataforma: en Linux/macOS sale JSON "exclusivo WINDOWS; el resto del
+flujo usa scripts/" con exit 2 (importa glue_windows antes que cualquier
+wintypes, para que el guard responda JSON y no un traceback de import).
 
 Verbos (y por que no existen hoy, segun el spec):
   portapapeles   teclado.py --via portapapeles solo COPIA+PEGABA y destruia el
@@ -40,28 +43,35 @@ Subcomandos:
   dpi listar
 
 Ejemplos (desde la carpeta computer-use-py):
-  py scripts/win_especiales.py portapapeles estado
-  py scripts/win_especiales.py portapapeles escribir "hola" --respaldar
-  py scripts/win_especiales.py procesos listar --nombre notepad.exe --con-ventana
-  py scripts/win_especiales.py procesos matar --pid 4321 --confirmar
-  py scripts/win_especiales.py ejecutar notepad --elevado
-  py scripts/win_especiales.py dpi listar
+  py scripts/windows/win_especiales.py portapapeles estado
+  py scripts/windows/win_especiales.py portapapeles escribir "hola" --respaldar
+  py scripts/windows/win_especiales.py procesos listar --nombre notepad.exe --con-ventana
+  py scripts/windows/win_especiales.py procesos matar --pid 4321 --confirmar
+  py scripts/windows/win_especiales.py ejecutar notepad --elevado
+  py scripts/windows/win_especiales.py dpi listar
 """
 
 import argparse
 import csv
-import ctypes
 import io
 import os
 import re
 import shutil
 import subprocess
 import sys
+
+# El glue WINDOWS vive en scripts/ (padre de esta rama): se importa ANTES que
+# ctypes.wintypes (exclusivo win32) para que en otro SO responda el guard JSON
+# con rc 2 y no un traceback de import.
+_DIR_SCRIPTS = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if _DIR_SCRIPTS not in sys.path:
+    sys.path.insert(0, _DIR_SCRIPTS)
+import glue_windows as c  # guard de plataforma + JSON canonico + Parser + monitores()
+
+import ctypes
 from ctypes import wintypes
 
-import _compartido as c  # guard de plataforma + JSON canonico + Parser + monitores()
-
-_ESQUEMA_URL = re.compile(r"^(?:[A-Za-z][A-Za-z0-9+.\-]{1,}:|www\.)")
+_ESQUEMA_URL = c.ESQUEMA_URL  # clasificador URL generico (vive en _core)
 
 
 # --- portapapeles -------------------------------------------------------------
@@ -163,6 +173,9 @@ def cmd_portapapeles_escribir(args):
         prev = _clipboard_actual()
         ruta = os.path.join(c.DIR_TMP, "clipboard_backup.txt")
         try:
+            # SEG2 G1.4: el respaldo exige DIR_TMP exista (la skill puede
+            # arrancar con .tmp/ casi vacia: los demas writes ya usan makedirs).
+            os.makedirs(c.DIR_TMP, exist_ok=True)
             with open(ruta, "w", encoding="utf-8") as fh:
                 fh.write(prev if prev is not None else "")
             backup = ruta
@@ -191,7 +204,8 @@ def cmd_portapapeles_escribir(args):
 
 
 def _teclado_combo(combo):
-    """ctrl+v via teclado.py (subproceso, cwd raiz de la skill). Devuelve rc."""
+    """ctrl+v via teclado.py (CLI de la raiz scripts/, subproceso con cwd raiz
+    de la skill). Devuelve rc. En win32 teclado.py ejecuta su ruta nativa."""
     ruta = os.path.join(c.RAIZ_SKILL, "scripts", "teclado.py")
     try:
         p = subprocess.run(

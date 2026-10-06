@@ -106,7 +106,7 @@ primer plano** (foreground lock timeout, que el llamador sea el proceso foregrou
 en lugar de activar → el `return` es engañoso para scripts; re-verificar con captura.
 Gestión de proceso: `tasklist` / `taskkill /IM nombre.exe /F` `[pre]` — formas comunes, **páginas no
 fetcheadas** → §G antes de usar flags finos (`/FI`, `/T`). En la skill ya son verbos JSON:
-`scripts/win_especiales.py procesos listar|matar --confirmar` (el matar gatea humano).
+`scripts/windows/win_especiales.py procesos listar|matar --confirmar` (el matar gatea humano).
 Legado: `WScript.Shell.SendKeys` (VBS) → desaconsejado: mismo canal de inyección, sin soporte
 moderno, requiere `wscript/cscript`; no verificado aquí (§G).
 
@@ -120,7 +120,7 @@ Escribe **texto** en el portapapeles (la doc solo describe "redirects the comman
 Windows clipboard" and apps "that can receive text"). No documenta lectura ni formatos ricos →
 leer/conservar unicode completo: sin solución en clip.exe → usar PowerShell
 `Get-Clipboard/Set-Clipboard` `[INC]` o pyperclip (la skill ya usa este último). DESDE LA SKILL:
-el portapapeles ya está resuelto en Python con `scripts/win_especiales.py portapapeles
+el portapapeles ya está resuelto en Python con `scripts/windows/win_especiales.py portapapeles
 leer|escribir --respaldar|estado` (JSON del contrato; LEER existe ahora: era el hueco que esta
 sección documentaba).
 

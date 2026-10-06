@@ -151,14 +151,14 @@ def _colectar():
 
 
 def _bounding(mons):
-    """Bounding desde rects conocidos; si faltan positions, usa (0,0)+tamanos."""
+    """Bounding desde rects conocidos; si faltan positions, usa (0,0)+tamanos.
+
+    Con rects presentes la formula min/max es la generica de
+    _core.bounding_de (identica a la de las otras ramas); lo exclusivo de
+    aqui es el fallback sin posiciones (union apilada, aproximada [runtime])."""
     rects = [m for m in mons if m["izq"] is not None]
     if rects:
-        x0 = min(m["izq"] for m in rects)
-        y0 = min(m["top"] for m in rects)
-        x1 = max(m["der"] for m in rects)
-        y1 = max(m["bot"] for m in rects)
-        return {"x": x0, "y": y0, "ancho": x1 - x0, "alto": y1 - y0}
+        return c.bounding_de(rects)
     # via sin posiciones: bounding aproximado = union apilada a la derecha
     ancho = sum((m["ancho"] or 0) for m in mons)
     alto = max([(m["alto"] or 0) for m in mons] or [0])

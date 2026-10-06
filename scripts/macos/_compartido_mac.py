@@ -1,8 +1,13 @@
 # -*- coding: utf-8 -*-
 """_compartido_mac.py — Utilidades comunes de los scripts macOS de la skill
-computer-use-py (dominio mac; NO importa al _compartido.py de Windows).
+computer-use-py (dominio mac; NO importa al glue_windows.py de la raiz).
 
-Contrato: TODO corre sobre Python. Cuando un script invoca por subprocess a
+FASE SEG2 — EL PUNTO DE ENTRADA NORMAL es scripts/<verbo>.py (raiz, multi-OS:
+los CLIs de la raiz enrutan aqui en macOS); ESTA CARPETA es el motor exclusivo
+de macOS. Llamar directamente a scripts/macos/<script>.py sigue funcionando
+(via avanzada; los CLIs raiz hacen exactamente esto).
+
+CONTRACT: TODO corre sobre Python. Cuando un script invoca por subprocess a
 herramientas del SO (screencapture, osascript, open) sigue siendo codigo
 Python quien las llama: la superficie del agente es Python + JSON identico
 al dominio Windows. Ver references/macos-python.md.
@@ -26,19 +31,31 @@ Efectos de borde deliberados:
    "error" y codigo de salida 1.
 """
 
+# FASE SEG: lo identico a las otras ramas (Parser, banderas ABORT/PAUSA,
+# validaciones de args, bucles de espera, color/combos, geometria de rects,
+# convencion de destino de capturas, tablas comunes) vive en
+# scripts/_core.py y se REEXPORTA abajo; aqui quedan solo los glue propios
+# de macOS (osascript/screencapture/Quartz, tablas kVK_/alias darwin,
+# escalas Retina y el failsafe emulado). Los textos canonicos compartidos
+# son los de la rama WINDOWS (validada en vivo): donde mac decia "reanuda"
+# ahora el mensaje unico dice "relanza" (anotado en el reporte FASE SEG).
+
 import json
 import os
 import subprocess
 import sys
 import time  # reexportado: los scripts duermen con `c.time.sleep(...)`
 
-# --- Guard de plataforma (inverso al del padre Windows) -------------------
-# scripts/macos/ es la rama macOS: ejecutada en otro SO debe responder el
-# JSON canonico con "corre en tu SO", no un fallo raro de osascript/Quartz.
+# --- Guard de plataforma ---------------------------------------------------
+# scripts/macos/ es el MOTOR EXCLUSIVO de macOS (la entrada normal es
+# scripts/<verbo>.py en la raiz, que enruta aqui): ejecutado en otro SO debe
+# responder el JSON canonico con "corre en tu SO", no un fallo raro de
+# osascript/Quartz.
 if sys.platform != "darwin":
     print(json.dumps({
-        "error": "scripts/macos/ es la rama macOS; en Windows usa scripts/ y "
-                 "en Linux scripts/linux/ (corre el autotest en tu SO)",
+        "error": "scripts/macos/ es el motor EXCLUSIVO de MACOS; el punto de "
+                 "entrada normal es scripts/<verbo>.py (raiz, multi-OS, "
+                 "enruta solo). Autotest: python autotest.py en tu SO",
         "sistema_operativo": sys.platform,
         # contrato P0-4: `plataforma` canonica tambien en el guard
         "plataforma": {"win32": "win", "linux": "linux",
@@ -46,7 +63,8 @@ if sys.platform != "darwin":
     }, ensure_ascii=False))
     sys.exit(2)
 
-import argparse
+# (argparse ya no se importa aqui: la clase Parser es generica y vive en
+#  scripts/_core.py; cada script trae su propio argparse.)
 
 # La consola arranca en codepage local y los JSON llevan tildes, enes y
 # titulos de ventana variados: forzar UTF-8 con reemplazo.
@@ -76,36 +94,42 @@ tocar = _core.tocar
 borrar = _core.borrar
 asegurar_capturas = _core.asegurar_capturas
 plataforma = _core.plataforma
+Parser = _core.Parser
+checar_abort = _core.checar_abort
+checar_pausa = _core.checar_pausa
+checar_aborto_espera = _core.checar_aborto_espera
+dormir = _core.dormir
+esperar_color = _core.esperar_color
+cap_ms = _core.cap_ms
+cap_timeout_esperar = _core.cap_timeout_esperar
+cap_segundos_mantener = _core.cap_segundos_mantener
+cap_duracion = _core.cap_duracion
+validar_segundos = _core.validar_segundos
+validar_tolerancia = _core.validar_tolerancia
+validar_confidence = _core.validar_confidence
+checar_max_lado = _core.checar_max_lado
+checar_args_esperar = _core.checar_args_esperar
+parsear_color = _core.parsear_color
+tiene_no_ascii = _core.tiene_no_ascii
+partes_combo = _core.partes_combo
+resolver_monitor = _core.resolver_monitor
+monitor_contiene = _core.monitor_contiene
+dentro_del_bounding = _core.dentro_del_bounding
+bounding_de = _core.bounding_de
+escalas_thumbnail = _core.escalas_thumbnail
+ruta_destino_captura = _core.ruta_destino_captura
+ALIAS_TECLAS_PYNPUT = _core.ALIAS_TECLAS_PYNPUT
+ESQUEMA_URL = _core.ESQUEMA_URL
+BOTONES = _core.BOTONES
 
 # Marco canonico de la rama (P0-4): puntos logicos de Cocoa/Quartz.
 MARCO = "puntos_logicos"
 
-
-class Parser(argparse.ArgumentParser):
-    """argparse cuyos errores salen como JSON canonico (P1-7): subcomando,
-    flag o --via invalido => {"error": "argumentos invalidos...", "uso"} rc 1."""
-
-    def error(self, message):
-        fail("argumentos invalidos: %s" % message,
-             uso=self.format_usage().strip())
-
-
-def checar_pausa(espera_max=300.0):
-    """Bandera suave (P1-5): con .tmp/PAUSA la accion se ESPERA (poll 0.2 s,
-    tope 300 s) hasta que se borre; ABORT manda. Sin bandera: un
-    os.path.exists, sin alterar temporizaciones validadas."""
-    if not os.path.exists(ARCHIVO_PAUSA):
-        return
-    inicio = time.time()
-    while os.path.exists(ARCHIVO_PAUSA):
-        checar_abort()
-        if time.time() - inicio > espera_max:
-            fail("PAUSA activa mas de %d s (bandera %s): atiende al usuario, "
-                 "borra la bandera y reanuda, o usa ABORT para cortar la "
-                 "secuencia." % (int(espera_max), ARCHIVO_PAUSA),
-                 bandera_pausa=ARCHIVO_PAUSA)
-        time.sleep(0.2)
-
+# Parser/checar_abort/checar_pausa/checar_aborto_espera: movidos a _core como
+# copias identicas de las 3 ramas (el default motivo='interrumpido' preserva
+# el mensaje historico de mac, que llamaba a checar_abort() sin argumentos).
+# ALIAS_TECLAS_PYNPUT reexportada NO se usa en esta rama: darwin tiene su
+# propio enum Key (ALIAS_TECLAS_MAC + tecla_pynput_mac mas abajo, especficos).
 
 # --- osascript: argv SIEMPRE, nunca f-strings con texto del usuario ------
 # VERIFICADO man osascript(1): "Any arguments following the script will be
@@ -336,13 +360,9 @@ def tamano_pantalla():
 def tamano_virtual():
     """Bounding de TODOS los monitores (calculado desde los rects reales):
     dict {x, y, ancho, alto}. Ningun script asume el signo de los origenes:
-    manda lo que CGDisplayBounds devuelva [runtime]."""
-    mons = monitores_logicos()
-    x0 = min(m["izq"] for m in mons)
-    y0 = min(m["top"] for m in mons)
-    x1 = max(m["der"] for m in mons)
-    y1 = max(m["bot"] for m in mons)
-    return {"x": x0, "y": y0, "ancho": x1 - x0, "alto": y1 - y0}
+    manda lo que CGDisplayBounds devuelva [runtime]. La formula min/max es
+    generica (_core.bounding_de); CGGetActiveDisplayList es lo unico mac."""
+    return _core.bounding_de(monitores_logicos())
 
 
 def posicion_cursor():
@@ -382,19 +402,17 @@ def _monitor_contiene(x, y):
     """Monitor cuyo rect contiene a (x, y) en puntos globales, o None.
 
     None = hueco del bounding con monitores desalineados o fuera de todo.
-    """
-    xi, yi = int(x), int(y)
-    for m in monitores_logicos():
-        if m["izq"] <= xi < m["der"] and m["top"] <= yi < m["bot"]:
-            return m
-    return None
+    La comparacion es generica (_core.monitor_contiene); aqui solo la lista
+    CGDisplayBounds de la rama."""
+    return _core.monitor_contiene(monitores_logicos(), x, y)
 
 
 def dentro_de_virtual(x, y):
-    """True si (x, y) cae dentro del bounding de la pantalla virtual."""
-    v = tamano_virtual()
-    return (v["x"] <= int(x) < v["x"] + v["ancho"]
-            and v["y"] <= int(y) < v["y"] + v["alto"])
+    """True si (x, y) cae dentro del bounding de la pantalla virtual.
+
+    Comparacion generica (_core.dentro_del_bounding) sobre el tamano_virtual
+    de la rama."""
+    return _core.dentro_del_bounding(tamano_virtual(), x, y)
 
 
 # --- RETINA -------------------------------------------------------------
@@ -504,14 +522,10 @@ def vk_mac(nombre):
 
 
 # --- Freno humano: banderas y esquinas -----------------------------------
-
-def checar_abort():
-    """Corta una espera/accion si el humano pidio parar (bandera ABORT)."""
-    if os.path.exists(ARCHIVO_ABORT):
-        fail("interrumpido: existe la bandera ABORT del .tmp de ESTA skill "
-             "(vigilar.py): un humano pidio parar. Captura la pantalla y "
-             "pregunta antes de continuar.", bandera=ARCHIVO_ABORT)
-
+# checar_abort/checar_pausa: genericos, reexportados desde _core arriba (el
+# default motivo='interrumpido' conserva literal el mensaje historico de la
+# rama). Lo exclusivo de mac: la EMULACION de esquinas (no hay FAILSAFE de
+# pyautogui aqui).
 
 def esquina_principal(x, y):
     """True si (x, y) es una de las 4 esquinas del display PRINCIPAL.

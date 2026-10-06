@@ -4,7 +4,7 @@
 > `lib/pynput/**` + docs readthedocs + CHANGES.rst + MSDN). Solo afirmaciones
 > VERIFICADAS; lo marcado [runtime] queda pendiente de prueba en máquina.
 > Leer este archivo SOLO si un script falla o hay que escribir código ad-hoc;
-> el flujo normal va por `scripts/`. La copia `pythonhosted.org/pynput` está
+> el flujo normal va por los CLIs de `scripts/` (raiz multi-OS). La copia `pythonhosted.org/pynput` está
 > congelada en v1.1.2 (2016): NO usarla.
 
 ## Índice
@@ -29,7 +29,7 @@
   controller trabaja en ESCALADAS si el proceso no es aware → desajuste.
   Fix oficial (global al proceso, pynput no lo hace solo):
   `ctypes.windll.shcore.SetProcessDpiAwareness(2)` — lo que aplica
-  `_compartido.py` antes de importar nada.
+  `glue_windows.py` (glue Windows de la raiz) antes de importar nada.
 - Correcciones a premisas frecuentes (verificadas contra el fuente master):
   en Windows `mouse.position` NO está normalizada −1..1 (son píxeles);
   NO existen `press_and_wait`, `KeyCode.from_virtual_key` ni el parámetro

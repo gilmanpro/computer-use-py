@@ -5,23 +5,32 @@ capturas) **como lo haría un humano**, con un loop de
 `captura → visión → acción → verificación`. Cada acción pasa por un script
 CLI que responde **JSON por stdout** (errores con clave `error` y salida 1),
 así que el agente siempre puede releer el estado antes del siguiente paso.
-La rama **Windows** está validada en escritorio real; **Linux** (X11/Wayland)
+La ruta **Windows** está validada en escritorio real; **Linux** (X11/Wayland)
 y **macOS** replican los verbos y el contrato con límites honestos (§Ramas).
 
 No es un framework de automatización para terceros: es control del *propio*
 escritorio con frenos humanos deliberados (FAILSAFE, watchdog, verificación
 de foco).
 
-## Ramas y enrutamiento
+## Arquitectura (FASE SEG2): flujo normal por `scripts/` raíz — los 3 SO
 
-| SO | Carpeta | Ejecución | Smoke (sin efectos) |
-|---|---|---|---|
-| Windows | `scripts/` | `py scripts/<s>.py <verbo>` | `py scripts/autotest.py` |
-| Linux | `scripts/linux/` | `python3 scripts/linux/<s>.py <verbo>` | `python3 scripts/linux/autotest.py` |
-| macOS | `scripts/macos/` | `python3 scripts/macos/<s>.py <verbo>` | `python3 scripts/macos/autotest.py` |
+| Elemento | Qué es |
+|---|---|
+| `scripts/monitores.py` · `pantalla.py` · `teclado.py` · `raton.py` · `ventanas.py` · `vigilar.py` · `autotest.py` | los 7 CLIs multi-OS: en **Windows** ejecutan la ruta nativa (DPI + pyautogui/pynput vía `glue_windows.py`); en **Linux/macOS** son un enrutador transparente del motor de la rama (mismo JSON y exit code VERBATIM); plataforma desconocida → JSON de error + rc 2 |
+| `scripts/_core.py` | código **genérico** multi-OS (stdlib puro: JSON, banderas, validaciones, esperas, geometría, enrutador) |
+| `scripts/glue_windows.py` | **glue exclusivo Windows** (guard, DPI, pyautogui, monitores ctypes) que reexporta `_core` |
+| `scripts/windows/win_especiales.py` | lo **únicamente Windows**: portapapeles leer/escribir/estado, procesos (tasklist/taskkill gateado), `ejecutar --elevado` (UAC), `dpi listar` |
+| `scripts/linux/` | **motor exclusivo Linux** (X11: xdotool/wmctrl/xrandr; Wayland: grim/ydotool/wtype/swaymsg) |
+| `scripts/macos/` | **motor exclusivo macOS** (screencapture, osascript/System Events, pynput/Quartz) |
 
-Correr la rama equivocada responde un JSON "corre en tu SO" (exit 2), nunca
-traceback. Contrato uniforme: `plataforma` en todo JSON, `marco` enum
+Autotest — **entrada única e invariable**: `py autotest.py` (Windows) o
+`python3 autotest.py` (Linux/macOS) desde esta carpeta raíz: llama a la suite
+`scripts/autotest.py`, que en win32 corre la batería histórica y en
+linux/darwin delega en la suite de su motor (`--con-escritura` se reenvía).
+Llamadas directas a CLIs o suites de rama quedan como vía avanzada. Correr la
+rama equivocada responde un JSON "corre en tu SO" (exit 2), nunca traceback.
+
+Contrato uniforme: `plataforma` en todo JSON, `marco` enum
 (`px_fisicos_virtual`/`px_layout`/`puntos_logicos`), campo único de re-escalado
 `px_por_unidad_coord`, objeto `ventana` anidado `rect`+`estado`, errores JSON.
 
@@ -45,11 +54,11 @@ py -m pip install opencv-python   :: opcional, solo para localizar --confidence
 En Linux/macOS las dependencias (pynput, pillow, pyobjc-framework-Quartz,
 opencv opcional; xdotool/wmctrl/grim/ydotool del sistema) están en
 `references/linux-python.md` §15 y `references/macos-python.md` §11.
-Tras instalar: corre el `autotest.py` de tu SO (modo lectura) como smoke;
-`--con-escritura` lanza un sandbox (Bloc de notas/editor/TextEdit) solo para
-un humano consciente.
+Tras instalar: corre `py autotest.py` desde la raíz de la skill (modo lectura)
+como smoke; `--con-escritura` lanza un sandbox (Bloc de notas/editor/TextEdit)
+solo para un humano consciente.
 
-## El loop, con comandos reales (rama Windows; idéntico en las otras con su carpeta)
+## El loop, con comandos reales (raíz multi-OS; idéntico en los 3 SO)
 
 ```bat
 py scripts/monitores.py listar
@@ -69,12 +78,15 @@ irreversibles** (borrar, enviar, pagar, loguear, credenciales).
 
 ## Scripts
 
-Los verbos por SO viven en un solo sitio: **SKILL.md §4** (mapa tarea→comando
-con la tabla SO→carpeta). La rama Windows añade `win_especiales.py`:
-portapapeles (`leer`/`escribir --respaldar`/`estado`), procesos (`listar`/
-`matar --pid --confirmar`), `ejecutar --elevado` (UAC) y `dpi listar` —
-el matar exige `--confirmar` humano y nunca imprime el portapapeles sin
-pedido explícito.
+La tabla de verbos por SO vive en un solo sitio: **SKILL.md §4** (mapa
+tarea→comando por CLI de la raíz + exclusivos). Estructura del código:
+`scripts/_core.py` = **genérico multi-OS** (stdlib puro: salida JSON, banderas
+ABORT/PAUSA, validaciones de args, bucles de espera, geometría de monitores,
+tablas, convenciones y enrutador); los CLIs de `scripts/` = **entrada normal
+en los 3 SO**; `glue_windows.py` y las carpetas `windows/linux/macos` =
+**exclusivos de cada SO**. El autotest de la suite audita el layout
+(`scripts/windows/` = solo `win_especiales.py`) y simula el enrute con la
+plataforma parcheada.
 
 ## Seguridad
 
@@ -98,5 +110,5 @@ puntos lógicos globales. Detalle, verificaciones y trampas (como el
   viven en `.tmp/` de esta skill y **no se commitean** (guard en
   `.tmp/.gitignore`).
 - `SKILL.md` es la guía de uso para el agente; `references/` guarda el
-  conocimiento verificado (API, multi-monitor, Linux/macOS por SO, comandos
-  nativos sin Python).
+  conocimiento verificado (pirámide Windows, API de librerías, multi-monitor,
+  Linux/macOS por SO, comandos nativos sin Python).

@@ -1,19 +1,22 @@
 # -*- coding: utf-8 -*-
-"""autotest.py — autovalidacion de la skill computer-use-py (rama LINUX).
+"""autotest.py — suite del MOTOR LINUX de computer-use-py.
 
-Checklist EQUIVALENTE al autotest de Windows, adaptado a los verbos reales de
-scripts/linux/ (mismos subcomandos; X11 por pyautogui/xdotool/wmctrl y Wayland
-por grim/ydotool/wtype/swaymsg). Modo SEGURO por defecto: solo lectura. El
-modo escritura (--con-escritura) corre un ciclo sandbox con un editor de
-texto (gedit/kate/mousepad/pluma/xed/leafpad): abrir, teclear ASCII+unicode,
-backspace, clic/doble/arrastre/scroll/mover en el lienzo, guard de mover
-fuera, espera adaptativa por pixel y cerrar sin guardar (SIGTERM del proceso
-propio). Exige el editor sin ventanas abiertas; si no hay editor instalado,
-todo el ciclo queda SKIP con motivo.
-
-Uso (desde la carpeta computer-use-py, en la maquina Linux):
+FASE SEG2: el punto de entrada normal es scripts/<verbo>.py (raiz, multi-OS)
+y la autovalidacion es `python3 autotest.py` en la raiz de la skill — la suite
+raiz (scripts/autotest.py) DELEGA en esta en Linux. Esta llamada directa es la
+via avanzada del motor exclusivo:
     python3 scripts/linux/autotest.py
     python3 scripts/linux/autotest.py --con-escritura
+
+Checklist EQUIVALENTE a la bateria raiz de Windows, adaptado a los verbos
+reales de scripts/linux/ (mismos subcomandos; X11 por pyautogui/xdotool/wmctrl
+y Wayland por grim/ydotool/wtype/swaymsg). Modo SEGURO por defecto: solo
+lectura. El modo escritura (--con-escritura) corre un ciclo sandbox con un
+editor de texto (gedit/kate/mousepad/pluma/xed/leafpad): abrir, teclear
+ASCII+unicode, backspace, clic/doble/arrastre/scroll/mover en el lienzo, guard
+de mover fuera, espera adaptativa por pixel y cerrar sin guardar (SIGTERM del
+proceso propio). Exige el editor sin ventanas abiertas; si no hay editor
+instalado, todo el ciclo queda SKIP con motivo.
 
 Requisitos previos leidos como LIMITACIONES (no FAIL):
   - X11: xdotool + wmctrl instalados y DISPLAY exportada.
@@ -39,6 +42,8 @@ import sys
 import time
 
 import _compartido_linux as c  # el guard de plataforma vive aqui (sal con 2)
+import _core  # scripts/ ya esta en sys.path (lo inserto _compartido_linux):
+              # se usa SOLO para el autotest de estructura multi-OS (FASE SEG)
 
 RAIZ = c.RAIZ_SKILL
 PY = sys.executable
@@ -202,9 +207,30 @@ def v_capturar(rc, err, d):
         d.get("sesion"))
 
 
+def _checks_estructura():
+    """Autotest de estructura multi-OS (FASE SEG/SEG2): (1) la raiz de scripts/
+    contiene SOLO los 7 CLIs multi-OS + _core.py + glue_windows.py + windows/
+    (solo win_especiales.py) + linux/ + macos/; (2) ningun modulo comun redefine
+    los helpers movidos a _core. Check interno puro (lee via _core, stdlib): sin
+    subprocess y sin efectos. Misma logica en las 3 suites (raiz, linux, macos)."""
+    probs = _core.problemas_inventario_scripts()
+    linea("estructura: scripts/ raiz", "(check interno)",
+          "OK" if not probs else "FAIL",
+          "; ".join(probs) if probs
+          else "raiz = 7 CLIs + _core.py + glue_windows.py + windows/(solo "
+               "win_especiales.py) + linux/ + macos/")
+    probs = _core.problemas_redefiniciones()
+    linea("estructura: modulos comunes sin redefiniciones", "(check interno)",
+          "OK" if not probs else "FAIL",
+          "; ".join(probs) if probs
+          else "glue_windows/_compartido_linux/_compartido_mac solo reexportan "
+               "HELPERS_COMUNES")
+
+
 # --- bateria modo lectura ---------------------------------------------------
 
 def bateria_lectura():
+    _checks_estructura()
     ses = _sesion()
 
     def v_listar(rc, err, d):

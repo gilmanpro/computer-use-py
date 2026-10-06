@@ -97,8 +97,8 @@ def _verificar_foco_requerido(subcadena):
     return "%s / %s" % (app, titulo or "(sin titulo)")
 
 
-def _tiene_no_ascii(texto):
-    return any(ord(ch) > 127 for ch in texto)
+# _tiene_no_ascii: generico en _core (identico en las 3 ramas); se llama via
+# c.tiene_no_ascii.
 
 
 def _escribir_pynput(texto, intervalo):
@@ -189,7 +189,7 @@ def cmd_escribir(args):
         if hay_pynput:
             via = "pynput"
         else:
-            via = "portapapeles" if _tiene_no_ascii(texto) else "osascript"
+            via = "portapapeles" if c.tiene_no_ascii(texto) else "osascript"
     if via == "pynput":
         if not hay_pynput:
             c.fail("--via pynput sin pynput instalado: "
@@ -203,7 +203,7 @@ def cmd_escribir(args):
         "ok": True,
         "via": via,
         "caracteres": len(texto),
-        "contiene_no_ascii": _tiene_no_ascii(texto),
+        "contiene_no_ascii": c.tiene_no_ascii(texto),
         "aviso": "el teclado va a la ventana enfocada; verifica con "
                  "pantalla.py capturar. via=osascript pasa el texto por argv "
                  "(visible en `ps`): usa --via portapapeles para credenciales",
@@ -306,12 +306,8 @@ def cmd_tecla(args):
     c.json_out(item)
 
 
-def _partes_combo(cadena):
-    partes = [p.strip().lower() for p in cadena.split("+") if p.strip()]
-    if not partes:
-        c.fail('Cadena de combo vacia. Formato: "cmd+shift+esc" (separado '
-               "por +).")
-    return partes
+# _partes_combo: algoritmo generico en _core; el ejemplo del mensaje es de la
+# rama mac ("cmd+shift+esc"). Se llama via c.partes_combo(cadena, ejemplo).
 
 
 def cmd_combo(args):
@@ -319,7 +315,7 @@ def cmd_combo(args):
     c.checar_pausa()
     foco = _verificar_foco_requerido(args.requiere_foco) \
         if args.requiere_foco else None
-    partes = _partes_combo(args.cadena)
+    partes = c.partes_combo(args.cadena, "cmd+shift+esc")
     final = partes[-1]
     mods = partes[:-1]
     if not mods:
@@ -382,7 +378,7 @@ def cmd_combo(args):
 def cmd_mantener(args):
     c.checar_abort()
     c.checar_pausa()
-    segundos = min(max(args.segundos, 0.05), 60.0)
+    segundos = c.cap_segundos_mantener(args.segundos)
     nombre = args.tecla.lower()
     if not _pynput_disponible():
         c.fail("mantener requiere pynput (press/release con sueno entre): "

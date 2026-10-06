@@ -1,6 +1,11 @@
 # -*- coding: utf-8 -*-
 """teclado.py — Teclado de la skill computer-use-py (PyAutoGUI + pynput).
 
+ENTRADA MULTI-OS (FASE SEG2): `python scripts/teclado.py ...` vale en los 3
+SO — en Windows ejecuta esta ruta nativa (validada en escritorio real); en
+Linux/macOS enruta TRANSPARENTemente al motor de su rama (scripts/linux|macos/)
+re-emitiendo su JSON y su exit code; plataforma desconocida responde JSON + rc 2.
+
 Camino de cada tecla (piramide de la skill):
 - pyautogui.press/write/hotkey: ASCII y teclas nombradas. En Windows su
   mapeo solo cubre caracteres 32-127: los NO-ASCII (ñ, á, ¿, emojis) se
@@ -26,7 +31,7 @@ Subcomandos:
   mantener  keyDown + sleep + keyUp (sin auto-repetición en Windows).
 
 Ejemplos (desde la carpeta computer-use-py):
-  py scripts/teclado.py escribir "Hola"
+  py scripts/teclado.py escribir "Hola"            # Windows (python3 en otros SO)
   py scripts/teclado.py escribir "Espana: ñ ¿á? 😀" --via pynput
   py scripts/teclado.py escribir "clave" --requiere-foco "Firefox"
   py scripts/teclado.py tecla enter --repeticiones 2
@@ -36,9 +41,17 @@ Ejemplos (desde la carpeta computer-use-py):
 """
 
 import argparse
+import os
+import sys
 import time
 
-import _compartido as c  # importa pyautogui ya con DPI + FAILSAFE + PAUSE
+# Deteccion de plataforma ANTES de los imports exclusivos Windows.
+if sys.platform != "win32":
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    import _core
+    _core.enrutar("teclado.py")  # nunca retorna en linux/darwin/desconocida
+
+import glue_windows as c  # importa pyautogui ya con DPI + FAILSAFE + PAUSE
 import pyautogui
 
 # Vias validadas EN HANDLER (P1-7): un --via de otra rama o falso debe
@@ -46,8 +59,8 @@ import pyautogui
 _VIAS = ("auto", "pyautogui", "pynput", "portapapeles")
 
 
-def _tiene_no_ascii(texto):
-    return any(ord(ch) > 127 for ch in texto)
+# _tiene_no_ascii: movido a _core (identico en las 3 ramas); se usa via
+# c.tiene_no_ascii.
 
 
 def _verificar_foco_requerido(subcadena):
@@ -150,8 +163,8 @@ def cmd_escribir(args):
     texto = args.texto
     via = args.via
     if via == "auto":
-        via = "pynput" if _tiene_no_ascii(texto) else "pyautogui"
-    if via == "pyautogui" and _tiene_no_ascii(texto):
+        via = "pynput" if c.tiene_no_ascii(texto) else "pyautogui"
+    if via == "pyautogui" and c.tiene_no_ascii(texto):
         # auto ya desvio; solo se llega aqui con --via pyautogui forzado.
         c.fail("--via pyautogui con texto no-ASCII: Windows lo ignoraria en "
                "silencio. Usa --via pynput o --via portapapeles.")
@@ -165,7 +178,7 @@ def cmd_escribir(args):
         "ok": True,
         "via": via,
         "caracteres": len(texto),
-        "contiene_no_ascii": _tiene_no_ascii(texto),
+        "contiene_no_ascii": c.tiene_no_ascii(texto),
         "aviso": "el teclado va a la ventana enfocada (un toast de Windows 11 "
                  "puede robarte el foco): verifica con pantalla.py capturar",
     }
@@ -231,18 +244,12 @@ def cmd_tecla(args):
     c.json_out(item)
 
 
-def _partes_combo(cadena):
-    partes = [p.strip().lower() for p in cadena.split("+") if p.strip()]
-    if not partes:
-        c.fail('Cadena de combo vacia. Formato: "ctrl+shift+esc" (separado por +).')
-    return partes
-
-
 def cmd_combo(args):
     c.checar_abort("combo")
     c.checar_pausa()
     foco = _verificar_foco_requerido(args.requiere_foco) if args.requiere_foco else None
-    partes = _partes_combo(args.cadena)
+    # _partes_combo: algoritmo movido a _core; el ejemplo del mensaje es de la rama.
+    partes = c.partes_combo(args.cadena, "ctrl+shift+esc")
     # Camino preferido: pyautogui.hotkey (pulsar en orden, soltar en reversa).
     if all(pyautogui.isValidKey(p) for p in partes):
         try:
@@ -286,7 +293,7 @@ def cmd_combo(args):
 def cmd_mantener(args):
     c.checar_abort("mantener")
     c.checar_pausa()
-    segundos = min(max(args.segundos, 0.05), 60.0)
+    segundos = c.cap_segundos_mantener(args.segundos)
     nombre = args.tecla.lower()
     via = "pyautogui"
     try:

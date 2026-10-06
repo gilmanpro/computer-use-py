@@ -64,7 +64,7 @@ import time
 import _compartido_mac as c
 
 # Botones: darwin NO define x1/x2 (VERIFICADO fuente mouse/_darwin.py:55-61).
-_BOTONES = ("left", "right", "middle")
+_BOTONES = c.BOTONES  # contrato JSON generico de la skill (vive en _core)
 _DARWIN_CATCH_UP = 0.01  # pausa post-evento: VERIFICADO pyautogui 0.9.54
                         # __init__.py:567 DARWIN_CATCH_UP_TIME = 0.01
 
@@ -308,7 +308,7 @@ def cmd_arrastrar(args):
                validos=list(_BOTONES))
     _guard_destino(args.x1, args.y1)
     _guard_destino(args.x2, args.y2)
-    duracion = min(max(args.duracion, 0.1), 30.0)
+    duracion = c.cap_duracion(args.duracion)
     pasos = min(max(int(duracion / 0.01), 10), 200)
     retardo = duracion / pasos
     c.fail_safe_check()

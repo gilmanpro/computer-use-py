@@ -1,6 +1,11 @@
 # -*- coding: utf-8 -*-
 """vigilar.py — Watchdog de entrada humana (listener pynput, skill computer-use-py).
 
+ENTRADA MULTI-OS (FASE SEG2): `python scripts/vigilar.py ...` vale en los 3
+SO — en Windows ejecuta esta ruta nativa (validada en escritorio real); en
+Linux/macOS enruta TRANSPARENTemente al motor de su rama (scripts/linux|macos/)
+re-emitiendo su JSON y su exit code; plataforma desconocida responde JSON + rc 2.
+
 Escucha el teclado durante N segundos y distingue entrada HUMANA de la
 inyectada por el propio agente gracias al argumento `injected` de los
 callbacks (pynput >= 1.8.0, soportado de verdad en Windows via flags
@@ -52,16 +57,23 @@ propia y escucha de 30 s):
 
 import argparse
 import os
+import sys
 import threading
 import time
 
-import _compartido as c  # rutas .tmp y JSON canonico (no toca el raton/teclado)
+# Deteccion de plataforma ANTES de los imports exclusivos Windows (pynput
+# puede fallar al importar sin sesion grafica: en otro SO se enruta primero).
+if sys.platform != "win32":
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    import _core
+    _core.enrutar("vigilar.py")  # nunca retorna en linux/darwin/desconocida
+
+import glue_windows as c  # rutas .tmp y JSON canonico (no toca el raton/teclado)
 from pynput import keyboard
 
 
 def cmd_arrancar(args):
-    if not (1 <= args.segundos <= 900):
-        c.fail("--segundos debe estar entre 1 y 900 (no es un demonio permanente).")
+    c.validar_segundos(args.segundos)  # rango generico en _core (3x identico)
     tecla_panic = c.tecla_pynput(args.tecla_panic)
     if tecla_panic is None:
         c.fail("Tecla de panico %r no existe en pynput.keyboard.Key. "

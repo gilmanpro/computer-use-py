@@ -90,51 +90,28 @@ def subprocess_run(cmd):
     return subprocess.run(cmd, capture_output=True, timeout=60)
 
 
-def _destino(archivo):
-    """Ruta destino: nombre pelado cae en .tmp/capturas (convencion de la
-    skill); con directorio se respeta. Sin --archivo, timestamp."""
-    if archivo:
-        destino = archivo
-        if not (os.path.dirname(destino)
-                or destino.startswith("/") or destino.startswith("\\")):
-            destino = os.path.join(c.asegurar_capturas(), destino)
-        ruta = os.path.abspath(destino)
-        os.makedirs(os.path.dirname(ruta) or ".", exist_ok=True)
-        return ruta
-    return os.path.join(c.asegurar_capturas(),
-                        "captura_%s.png" % time.strftime("%Y%m%d_%H%M%S"))
+# _destino(archivo): la convencion de ruta (nombre pelado -> .tmp/capturas,
+# con directorio se respeta, default captura_<fecha_hora>) es generica y vive
+# en _core.ruta_destino_captura; cmd_capturar la llama directo.
 
 
 def _resolver_monitor(valor):
     """--monitor: None si 'virtual' | dict del monitor (mismos criterios
-    que en Windows: indice, 'primario', subcadena del nombre)."""
-    v = valor.strip().lower()
-    if v in ("virtual", "toda", "todas", "todo"):
-        return None
-    mons, _via = _mon_listar()
-    if v in ("primario", "primary"):
-        for m in mons:
-            if m["primario"]:
-                return m
-        c.fail("Ningun monitor figura como primario. Revisa "
-               "monitores.py listar.")
-    try:
-        idx = int(valor)
-    except ValueError:
-        idx = None
-    if idx is not None:
-        if 0 <= idx < len(mons):
-            return mons[idx]
-        c.fail("Indice de monitor %d fuera de rango (0..%d). "
-               "Mapa: monitores.py listar." % (idx, len(mons) - 1))
-    coincidencias = [m for m in mons if v in str(m["nombre"]).lower()]
-    if len(coincidencias) == 1:
-        return coincidencias[0]
-    if len(coincidencias) > 1:
-        c.fail("La subcadena %r coincide con varios monitores (%s): usa el "
-               "indice." % (valor, [m["nombre"] for m in coincidencias]))
-    c.fail("Ningun monitor tiene el nombre %r. Mapa: monitores.py listar."
-           % valor)
+    que en Windows: indice, 'primario', subcadena del nombre).
+
+    El algoritmo es el generico de _core.resolver_monitor; aqui solo la
+    FUENTE de la lista (la cadena de fallback de monitores.py) y los TEXTOS
+    historicos de la rama."""
+    return c.resolver_monitor(
+        valor, lambda: _mon_listar()[0],
+        sin_primario="Ningun monitor figura como primario. Revisa "
+                     "monitores.py listar.",
+        indice_rango="Indice de monitor %d fuera de rango (0..%d). "
+                     "Mapa: monitores.py listar.",
+        ambiguo="La subcadena %r coincide con varios monitores (%s): usa el "
+                "indice.",
+        sin_nombre="Ningun monitor tiene el nombre %r. Mapa: monitores.py "
+                   "listar.")
 
 
 def _mon_listar():
@@ -234,7 +211,8 @@ def cmd_capturar(args):
     origen = [0, 0]
     puntos = None
     extra = {}
-    destino = _destino(args.archivo)
+    # Destino con la convencion generica de la skill (_core.ruta_destino_captura).
+    destino = c.ruta_destino_captura(args.archivo)
 
     mons, via_mapa = _mon_listar()
     if args.monitor is not None:
@@ -315,20 +293,20 @@ def cmd_capturar(args):
         escala_rx, escala_ry, _sz = c.escala_retina(
             destino, puntos["ancho"], puntos["alto"])
 
-    escala_x, escala_y = 1.0, 1.0
     if args.max_lado is not None:
-        if args.max_lado < 16:
-            c.fail("--max-lado demasiado pequeno (minimo 16 px).")
+        # Chequeo y factor del recorte: genericos en _core (el texto canonico
+        # es el de la rama Windows, validada en escritorio real).
+        c.checar_max_lado(args.max_lado)
         from PIL import Image
         im = c.pil_open(destino)
         im.thumbnail((args.max_lado, args.max_lado), Image.LANCZOS)
-        escala_x = fis_w / float(im.width)
-        escala_y = fis_h / float(im.height)
         im.save(destino)
         ancho_final, alto_final = int(im.width), int(im.height)
         im.close()
     else:
         ancho_final, alto_final = fis_w, fis_h
+    escala_x, escala_y = c.escalas_thumbnail(fis_w, fis_h,
+                                             ancho_final, alto_final)
 
     try:
         pw, ph = c.tamano_pantalla()
@@ -469,21 +447,6 @@ def cmd_pixel(args):
                        "ser 2x2 en Retina: se toma el centro [runtime])"})
 
 
-def _parsear_color(texto):
-    partes = texto.split(",")
-    if len(partes) != 3:
-        c.fail('Color con formato "r,g,b" (tres enteros 0-255 separados por '
-               "comas, sin espacios), no %r." % texto)
-    try:
-        valores = [int(p) for p in partes]
-    except ValueError:
-        c.fail("Color con componentes no enteros: %r." % texto)
-    for v in valores:
-        if not 0 <= v <= 255:
-            c.fail("Color fuera de rango 0-255: %r." % texto)
-    return tuple(valores)
-
-
 def _color_coincide(x, y, color, tol):
     r, g, b = _pixel_punto(x, y)
     cr, cg, cb = color
@@ -491,16 +454,14 @@ def _color_coincide(x, y, color, tol):
 
 
 def cmd_esperar(args):
-    c.checar_abort()   # bandera dura al inicio (luego, por poll)
+    c.checar_abort()   # bandera dura al inicio (luego, por poll); motivo
+                       # default 'interrumpido' = mensaje historico de mac
     c.checar_pausa()   # P1-5: con PAUSA la espera arranca al liberarse
     inicio = time.monotonic()
-    if args.pixel is not None:
-        if args.color is None:
-            c.fail("El modo adaptativo requiere --pixel X Y y --color r,g,b "
-                   "juntos.")
-        if not args.cambia and args.estable is None:
-            c.fail("Indica --cambia o --estable M (ms de coincidencia "
-                   "continua) junto a --pixel y --color.")
+    # Coherencia de flags y bucles: genericos en _core (copias identicas de
+    # las 3 ramas). Lo propio de mac —mini-captura screencapture 1pt por
+    # sondeo y su check ABORT sin motivo— llega al bucle por callbacks.
+    if c.checar_args_esperar(args.pixel, args.color, args.cambia, args.estable):
         x, y = args.pixel
         if c.quartz_disponible() and not c.dentro_de_virtual(x, y):
             mons, _via = _mon_listar()
@@ -509,33 +470,17 @@ def cmd_esperar(args):
                    "(x %d..%d, y %d..%d)."
                    % (x, y, v["x"], v["x"] + v["ancho"] - 1,
                       v["y"], v["y"] + v["alto"] - 1))
-        color = _parsear_color(args.color)
+        color = c.parsear_color(args.color)
         tol = args.tolerancia
-        if not 0 <= tol <= 255:
-            c.fail("--tolerancia debe estar entre 0 y 255.")
-        limite = min(max(args.timeout, 0.5), 120.0)
-        racha_ini = None
-        cumplida = False
-        while True:
-            coincide = _color_coincide(x, y, color, tol)
-            if args.cambia:
-                cumplida = not coincide
-            else:
-                if coincide:
-                    if racha_ini is None:
-                        racha_ini = time.monotonic()
-                    cumplida = (time.monotonic() - racha_ini) * 1000.0 >= args.estable
-                else:
-                    racha_ini = None
-                    cumplida = False
-            if cumplida or (time.monotonic() - inicio) >= limite:
-                break
-            c.checar_abort()
-            time.sleep(0.25)  # mini-captura por sondeo: mas caro que Win
-        c.checar_abort()
+        c.validar_tolerancia(tol)
+        limite = c.cap_timeout_esperar(args.timeout)
+        cumplida, ms_esperados = c.esperar_color(
+            lambda: _color_coincide(x, y, color, tol),
+            args.cambia, args.estable, limite, 0.25, inicio,
+            c.checar_abort)  # poll ~250 ms: mini-captura mas cara que Win
         c.json_out({
             "cumplida": bool(cumplida),
-            "ms_esperados": int((time.monotonic() - inicio) * 1000),
+            "ms_esperados": ms_esperados,
             "modo": "cambia" if args.cambia else "estable",
             "pixel": [int(x), int(y)],
             "color": list(color),
@@ -550,16 +495,8 @@ def cmd_esperar(args):
                     "vigilar.py corta la espera",
         })
         return
-    if args.color is not None or args.cambia or args.estable is not None:
-        c.fail("--color/--cambia/--estable solo valen con --pixel X Y; para "
-               "una pausa fija usa solo --milisegundos N.")
-    ms = min(max(int(args.milisegundos), 0), 30000)
-    restante = ms
-    while restante > 0:
-        paso = min(restante, 200)
-        time.sleep(paso / 1000.0)
-        restante -= paso
-        c.checar_abort()
+    ms = c.cap_ms(args.milisegundos)
+    c.dormir(ms, c.checar_abort)
     c.json_out({
         "cumplida": True,
         "ms_esperados": ms,
@@ -619,8 +556,8 @@ def cmd_localizar(args):
     res = cv2.matchTemplate(gran, plantilla, cv2.TM_CCOEFF_NORMED)
     _minv, maxv, _minl, topleft = cv2.minMaxLoc(res)
     conf = 0.999 if args.confidence is None else args.confidence
-    if args.confidence is not None and not (0.0 <= args.confidence <= 1.0):
-        c.fail("confidence debe estar entre 0.0 y 1.0.")
+    if args.confidence is not None:
+        c.validar_confidence(args.confidence)
     if maxv < conf:
         c.json_out({
             "encontrado": False,

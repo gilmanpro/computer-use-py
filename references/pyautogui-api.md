@@ -4,7 +4,8 @@
 > código fuente master + pygetwindow). SOLO afirmaciones VERIFICADAS; lo
 > marcado [runtime] debe comprobarse en la máquina antes de fiarse. Recortado
 > a lo que usa esta skill. Leer este archivo solo si un script falla o hay que
-> escribir código ad-hoc — el flujo normal va por `scripts/`.
+> escribir código ad-hoc — el flujo normal va por los CLIs de `scripts/` (raiz
+> multi-OS).
 
 ## Índice
 

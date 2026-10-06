@@ -63,7 +63,7 @@ import _compartido_linux as c
 
 # Esquema de URL: >=2 letras/digitos y +-. antes de ':' (descarta "/ruta" y
 # "C:\ruta") o prefijo "www." — misma regla del dominio Windows.
-_ESQUEMA_URL = re.compile(r"^(?:[A-Za-z][A-Za-z0-9+.\-]{1,}:|www\.)")
+_ESQUEMA_URL = c.ESQUEMA_URL  # clasificador URL generico (vive en _core)
 
 # xprop existe => se puede leer _NET_WM_STATE (MAXIMIZED_*) por ventana (P1-2);
 # sin xprop, 'maximizada' sale null honesto (NUNCA inventar).

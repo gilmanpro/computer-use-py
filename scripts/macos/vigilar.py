@@ -58,9 +58,7 @@ import _compartido_mac as c
 
 
 def cmd_arrancar(args):
-    if not (1 <= args.segundos <= 900):
-        c.fail("--segundos debe estar entre 1 y 900 (no es un demonio "
-               "permanente).")
+    c.validar_segundos(args.segundos)  # rango generico en _core (3x identico)
     keyboard = c.try_pynput()
     tecla_panic = c.tecla_pynput_mac(args.tecla_panic)
     if tecla_panic is None:

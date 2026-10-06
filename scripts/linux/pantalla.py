@@ -125,57 +125,29 @@ def _cursor_layout():
         return None
 
 
-def _parsear_color(texto):
-    partes = texto.split(",")
-    if len(partes) != 3:
-        c.fail('Color con formato "r,g,b" (tres enteros 0-255 separados por '
-               'comas, sin espacios), no %r.' % texto)
-    try:
-        valores = [int(p) for p in partes]
-    except ValueError:
-        c.fail('Color con componentes no enteros: %r.' % texto)
-    for v in valores:
-        if not 0 <= v <= 255:
-            c.fail("Color fuera de rango 0-255: %r." % texto)
-    return tuple(valores)
-
-
-def _checar_aborto_espera():
-    """Corta una espera larga si el humano pidio parar (bandera de vigilar)."""
-    c.checar_abort("esperar interrumpida")
+# _parsear_color y la bandera de espera ('esperar interrumpida') son genericos
+# (viven en _core, identicos en las 3 ramas): se llaman via c.parsear_color y
+# c.checar_aborto_espera.
 
 
 def _resolver_monitor(valor):
     """--monitor: None si 'virtual' (bounding) | dict del monitor (mismo
-    contrato que el padre: indice, 'primario' o subcadena del nombre)."""
-    v = valor.strip().lower()
-    if v in ("virtual", "toda", "todas", "todo"):
-        return None
-    mons = c.monitores()
-    if v in ("primario", "primary"):
-        for m in mons:
-            if m["primario"]:
-                return m
-        c.fail("Ningun monitor figura como primario (ni xrandr '*' ni "
-               "sway/hypr primary): trata el primero como tal o revisa "
-               "monitores.py listar.")
-    try:
-        idx = int(valor)
-    except ValueError:
-        idx = None
-    if idx is not None:
-        if 0 <= idx < len(mons):
-            return mons[idx]
-        c.fail("Indice de monitor %d fuera de rango (0..%d). "
-               "Mapa: monitores.py listar." % (idx, len(mons) - 1))
-    coincidencias = [m for m in mons if v in m["nombre"].lower()]
-    if len(coincidencias) == 1:
-        return coincidencias[0]
-    if len(coincidencias) > 1:
-        c.fail("La subcadena %r coincide con varios monitores (%s): usa el "
-               "indice." % (valor, [m["nombre"] for m in coincidencias]))
-    c.fail("Ningun monitor tiene el nombre %r. Mapa: monitores.py listar."
-           % valor)
+    contrato que el padre: indice, 'primario' o subcadena del nombre).
+
+    El algoritmo es el generico de _core.resolver_monitor; aqui quedan la
+    FUENTE de la lista (xrandr/sway/hypr) y los TEXTOS con jerga de Linux
+    ("*" de xrandr, primary de sway/hypr)."""
+    return c.resolver_monitor(
+        valor, c.monitores,
+        sin_primario="Ningun monitor figura como primario (ni xrandr '*' ni "
+                     "sway/hypr primary): trata el primero como tal o revisa "
+                     "monitores.py listar.",
+        indice_rango="Indice de monitor %d fuera de rango (0..%d). "
+                     "Mapa: monitores.py listar.",
+        ambiguo="La subcadena %r coincide con varios monitores (%s): usa el "
+                "indice.",
+        sin_nombre="Ningun monitor tiene el nombre %r. Mapa: monitores.py "
+                   "listar.")
 
 
 def _captura_x11(args):
@@ -230,18 +202,9 @@ def _captura_x11(args):
     return imagen, [v["x"], v["y"]]
 
 
-def _destino(args):
-    """Ruta destino PNG con la convencion del padre: nombre pelado cae en
-    .tmp/capturas; con directorio se respeta tal cual."""
-    if args.archivo:
-        destino = args.archivo
-        if not (os.path.dirname(destino) or destino.startswith(("/", "\\"))):
-            destino = os.path.join(c.asegurar_capturas(), destino)
-        ruta = os.path.abspath(destino)
-        os.makedirs(os.path.dirname(ruta) or ".", exist_ok=True)
-        return ruta
-    return os.path.join(c.asegurar_capturas(),
-                        "captura_%s.png" % time.strftime("%Y%m%d_%H%M%S"))
+# _destino(args): la convencion de ruta (nombre pelado -> .tmp/capturas,
+# con directorio se respeta, default captura_<fecha_hora>) es generica y
+# vive en _core.ruta_destino_captura; cmd_capturar la llama directo.
 
 
 def _grim_abrir(ruta):
@@ -318,7 +281,8 @@ def _captura_wayland(args, ruta):
 
 def cmd_capturar(args):
     sesion = c.deteccion_sesion()
-    ruta = _destino(args)
+    # Destino con la convencion generica de la skill (_core.ruta_destino_captura).
+    ruta = c.ruta_destino_captura(args.archivo)
     en_ruta = False
     if sesion == "x11":
         imagen, origen = _captura_x11(args)
@@ -332,14 +296,15 @@ def cmd_capturar(args):
                sesion=sesion)
 
     fis_w, fis_h = int(imagen.width), int(imagen.height)
-    escala_x, escala_y = 1.0, 1.0
     if args.max_lado is not None:
-        if args.max_lado < 16:
-            c.fail("--max-lado demasiado pequeno (minimo 16 px).")
+        # Chequeo y factor del recorte: genericos en _core (el texto canonico
+        # es el de la rama Windows validada: "pequeño (mínimo 16 px)").
+        c.checar_max_lado(args.max_lado)
         Image, _ = _pillow()
         imagen.thumbnail((args.max_lado, args.max_lado), Image.LANCZOS)
-        escala_x = fis_w / float(imagen.width)
-        escala_y = fis_h / float(imagen.height)
+    escala_x, escala_y = c.escalas_thumbnail(fis_w, fis_h,
+                                             int(imagen.width),
+                                             int(imagen.height))
     if sesion == "x11" or args.max_lado is not None or not en_ruta:
         imagen.save(ruta)  # normalizar: PNG final en la ruta devuelta
     # P0-3: factor TOTAL imagen->coordenada. En Wayland grim aplica una escala
@@ -470,13 +435,10 @@ def cmd_esperar(args):
     c.checar_abort("esperar")  # bandera dura al inicio (luego, por poll)
     c.checar_pausa()           # PAUSA: la espera arranca cuando se libera
     inicio = time.monotonic()
-    if args.pixel is not None:
-        if args.color is None:
-            c.fail("El modo adaptativo requiere --pixel X Y y --color r,g,b "
-                   "juntos.")
-        if not args.cambia and args.estable is None:
-            c.fail("Indica --cambia o --estable M (ms de coincidencia "
-                   "continua) junto a --pixel y --color.")
+    # Coherencia de flags y bucles: genericos en _core (copias identicas de
+    # las 3 ramas). Lo propio de linux —leer el pixel segun sesion (pyautogui
+    # X11 / grim 1x1 Wayland)— llega al bucle por callback _coincide().
+    if c.checar_args_esperar(args.pixel, args.color, args.cambia, args.estable):
         x, y = args.pixel
         if not c.dentro_de_virtual(x, y):
             v = c.tamano_virtual()
@@ -484,35 +446,22 @@ def cmd_esperar(args):
                    "(x %d..%d, y %d..%d)."
                    % (x, y, v["x"], v["x"] + v["ancho"] - 1,
                       v["y"], v["y"] + v["alto"] - 1))
-        color = _parsear_color(args.color)
+        color = c.parsear_color(args.color)
         tol = args.tolerancia
-        if not 0 <= tol <= 255:
-            c.fail("--tolerancia debe estar entre 0 y 255.")
-        limite = min(max(args.timeout, 0.5), 120.0)
-        racha_ini = None
-        cumplida = False
-        while True:
+        c.validar_tolerancia(tol)
+        limite = c.cap_timeout_esperar(args.timeout)
+
+        def _coincide():
             pr, pg, pb = _leer_pixel(x, y)
-            coincide = (abs(pr - color[0]) <= tol and abs(pg - color[1]) <= tol
-                        and abs(pb - color[2]) <= tol)
-            if args.cambia:
-                cumplida = not coincide
-            else:
-                if coincide:
-                    if racha_ini is None:
-                        racha_ini = time.monotonic()
-                    cumplida = (time.monotonic() - racha_ini) * 1000.0 >= args.estable
-                else:
-                    racha_ini = None
-                    cumplida = False
-            if cumplida or (time.monotonic() - inicio) >= limite:
-                break
-            _checar_aborto_espera()
-            time.sleep(0.1)
-        _checar_aborto_espera()
+            return (abs(pr - color[0]) <= tol and abs(pg - color[1]) <= tol
+                    and abs(pb - color[2]) <= tol)
+
+        cumplida, ms_esperados = c.esperar_color(
+            _coincide, args.cambia, args.estable, limite, 0.1, inicio,
+            c.checar_aborto_espera)
         c.json_out({
             "cumplida": bool(cumplida),
-            "ms_esperados": int((time.monotonic() - inicio) * 1000),
+            "ms_esperados": ms_esperados,
             "modo": "cambia" if args.cambia else "estable",
             "pixel": [int(x), int(y)],
             "color": list(color),
@@ -527,16 +476,8 @@ def cmd_esperar(args):
                     "espera",
         })
         return
-    if args.color is not None or args.cambia or args.estable is not None:
-        c.fail("--color/--cambia/--estable solo valen con --pixel X Y; para "
-               "una pausa fija usa solo --milisegundos N.")
-    ms = min(max(int(args.milisegundos), 0), 30000)
-    restante = ms
-    while restante > 0:
-        paso = min(restante, 200)
-        time.sleep(paso / 1000.0)
-        restante -= paso
-        _checar_aborto_espera()
+    ms = c.cap_ms(args.milisegundos)
+    c.dormir(ms, c.checar_aborto_espera)
     c.json_out({
         "cumplida": True,
         "ms_esperados": ms,
@@ -563,8 +504,7 @@ def cmd_localizar(args):
         kwargs["region"] = tuple(args.region)
     aviso = None
     if args.confidence is not None:
-        if not (0.0 <= args.confidence <= 1.0):
-            c.fail("confidence debe estar entre 0.0 y 1.0.")
+        c.validar_confidence(args.confidence)
         kwargs["confidence"] = args.confidence
     try:
         try:

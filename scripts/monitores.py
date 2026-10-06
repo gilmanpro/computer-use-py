@@ -1,11 +1,16 @@
 # -*- coding: utf-8 -*-
 """monitores.py — Mapa de monitores y pantalla virtual (skill computer-use-py).
 
-ctypes puro: EnumDisplayMonitors + GetMonitorInfoW + GetSystemMetrics
-(SM_X/Y/CX/CYVIRTUALSCREEN) + GetCursorPos. Sin dependencias nuevas: la unica
-importacion propia es _compartido (JSON canonico y DPI per-monitor fijado
-ANTES de leer metricas, para que el mapa este en pixeles fisicos igual que
-las capturas). Marco: referencias/monitores-multi.md.
+ENTRADA MULTI-OS (FASE SEG2): `python scripts/monitores.py ...` vale en los 3
+SO — en Windows ejecuta esta ruta nativa (validada en escritorio real); en
+Linux/macOS enruta TRANSPARENTemente al motor de su rama (scripts/linux|macos/)
+re-emitiendo su JSON y su exit code; plataforma desconocida responde JSON + rc 2.
+
+Ruta Windows nativa — ctypes puro: EnumDisplayMonitors + GetMonitorInfoW +
+GetSystemMetrics (SM_X/Y/CX/CYVIRTUALSCREEN) + GetCursorPos. Sin dependencias
+nuevas: la unica importacion propia es glue_windows (JSON canonico y DPI
+per-monitor fijado ANTES de leer metricas, para que el mapa este en pixeles
+fisicos igual que las capturas). Marco: referencias/monitores-multi.md.
 
 Coordenadas del ESPACIO VIRTUAL: el origen logico (0,0) es el vertice
 sup-izq del monitor PRIMARIO; un monitor a la izquierda/arriba tiene
@@ -17,15 +22,26 @@ Salida: JSON por stdout; errores JSON con "error". Subcomandos:
   cursor  Que monitor contiene el cursor (GetCursorPos, via solo lectura).
 
 Ejemplos (desde la carpeta computer-use-py):
-  py scripts/monitores.py listar
+  py scripts/monitores.py listar          # Windows (python3 en Linux/macOS)
   py scripts/monitores.py cursor
 """
 
 import argparse
+import os
+import sys
+
+# Deteccion de plataforma ANTES de cualquier import exclusivo de Windows
+# (wintypes solo existe en win32; en otro SO este CLI se convierte en el
+# enrutador de la rama y aqui mismo termina su ejecucion).
+if sys.platform != "win32":
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    import _core
+    _core.enrutar("monitores.py")  # nunca retorna en linux/darwin/desconocida
+
 import ctypes
 from ctypes import wintypes
 
-import _compartido as c  # DPI per-monitor + json_out/fail (no mueve el cursor)
+import glue_windows as c  # DPI per-monitor + json_out/fail (no mueve el cursor)
 
 
 def cmd_listar(args):

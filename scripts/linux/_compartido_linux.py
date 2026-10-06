@@ -1,11 +1,17 @@
 # -*- coding: utf-8 -*-
 """_compartido_linux.py — utilidades comunes del dominio LINUX de computer-use-py.
 
+FASE SEG2 — EL PUNTO DE ENTRADA NORMAL es scripts/<verbo>.py (raiz, multi-OS:
+los CLIs de la raiz enrutan aqui en Linux); ESTA CARPETA es el motor exclusivo
+de Linux. Llamar directamente a scripts/linux/<script>.py sigue funcionando
+(via avanzada; los CLIs raiz hacen exactamente esto).
+
 CONTRACT CENTRAL "TODO se ejecuta sobre Python": el agente llama solo a
-python3 scripts/linux/<script>.py; los subprocess internos (xdotool, wmctrl,
-xrandr, grim, wtype, ydotool, swaymsg...) son IMPLEMENTACION, no superficie
-del agente. La superficie JSON es IDENTICA al dominio Windows (padre
-scripts/_compartido.py): stdout siempre JSON UTF-8; error canonico = JSON con
+python3 scripts/<script>.py (o su equivalente de rama); los subprocess
+internos (xdotool, wmctrl, xrandr, grim, wtype, ydotool, swaymsg...) son
+IMPLEMENTACION, no superficie del agente. La superficie JSON es IDENTICA al
+dominio Windows (glue_windows.py en la raiz de scripts/): stdout siempre JSON
+UTF-8; error canonico = JSON con
 clave "error" + exit 1.
 
 Diferencias de marco con Windows (leer references/linux-python.md):
@@ -29,14 +35,16 @@ import subprocess
 import sys
 import time  # reexportado: los scripts duermen con `c.time.sleep(...)`
 
-# --- Guard de plataforma (inverso al del padre Windows) -------------------
-# scripts/linux/ es la rama LINUX: ejecutada en otro SO debe responder el
-# JSON canonico de la skill y salir con 2 (mal uso del CLI), nunca un
-# traceback o un fallo opaco de las herramientas del dominio.
+# --- Guard de plataforma ---------------------------------------------------
+# scripts/linux/ es el MOTOR EXCLUSIVO de Linux (la entrada normal es
+# scripts/<verbo>.py en la raiz, que enruta aqui): ejecutado en otro SO debe
+# responder el JSON canonico de la skill y salir con 2 (mal uso del CLI),
+# nunca un traceback o un fallo opaco de las herramientas del dominio.
 if sys.platform != "linux":
     print(json.dumps({
-        "error": "scripts/linux/ es la rama LINUX; en Windows usa scripts/ "
-                 "y en macOS scripts/macos/ (el autotest corre en tu SO)",
+        "error": "scripts/linux/ es el motor EXCLUSIVO de LINUX; el punto de "
+                 "entrada normal es scripts/<verbo>.py (raiz, multi-OS, "
+                 "enruta solo). Autotest: python autotest.py en tu SO",
         "sistema_operativo": sys.platform,
         # contrato P0-4: `plataforma` canonica tambien en el guard
         "plataforma": {"win32": "win", "linux": "linux",
@@ -44,7 +52,8 @@ if sys.platform != "linux":
     }, ensure_ascii=False))
     sys.exit(2)
 
-import argparse
+# (argparse ya no se importa aqui: la clase Parser es generica y vive en
+#  scripts/_core.py; cada script trae su propio argparse.)
 
 # La salida puede llevar titulos UTF-8 con tildes/emojis: forzar UTF-8 con
 # reemplazo (mismo borde que el padre en Windows).
@@ -53,11 +62,18 @@ try:
 except Exception:
     pass
 
-# --- Helpers stdlib-puro compartidos (SPEC P2-1) --------------------------
+# --- Helpers GENERICOS multi-OS (scripts/_core.py) — reexportados ----------
 # _core.py vive en scripts/ (padre de linux/ y macos/): stdlib-puro, seguro
 # en cualquier SO. Se reexporta aqui para que los scripts de la rama sigan
 # usando c.json_out/c.fail/... con comportamiento IDENTICO. json_out/fail de
 # _core inyectan `plataforma: "linux"` automaticamente (P0-4).
+# FASE SEG: a _core se movio TODO lo que estaba duplicado palabra-por-palabra
+# con las otras ramas (Parser, banderas ABORT/PAUSA, validaciones de args,
+# bucles de espera, color/combos, geometria de rects, tablas y destino de
+# capturas). En los mensajes donde linux divergia solo ortograficamente del
+# padre Windows ("reanuda" vs "relanza", "pequeno" vs "pequeño") gana el
+# texto WINDOWS, canonico por ser la rama validada en escritorio real.
+# El autotest de estructura exige no redefinir aqui ningun HELPERS_COMUNES.
 _DIR_PADRE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if _DIR_PADRE not in sys.path:
     sys.path.insert(0, _DIR_PADRE)
@@ -75,44 +91,36 @@ tocar = _core.tocar
 borrar = _core.borrar
 asegurar_capturas = _core.asegurar_capturas
 plataforma = _core.plataforma
+Parser = _core.Parser
+checar_abort = _core.checar_abort
+checar_pausa = _core.checar_pausa
+checar_aborto_espera = _core.checar_aborto_espera
+dormir = _core.dormir
+esperar_color = _core.esperar_color
+cap_ms = _core.cap_ms
+cap_timeout_esperar = _core.cap_timeout_esperar
+cap_segundos_mantener = _core.cap_segundos_mantener
+cap_duracion = _core.cap_duracion
+validar_segundos = _core.validar_segundos
+validar_tolerancia = _core.validar_tolerancia
+validar_confidence = _core.validar_confidence
+checar_max_lado = _core.checar_max_lado
+checar_args_esperar = _core.checar_args_esperar
+parsear_color = _core.parsear_color
+tiene_no_ascii = _core.tiene_no_ascii
+partes_combo = _core.partes_combo
+resolver_monitor = _core.resolver_monitor
+monitor_contiene = _core.monitor_contiene
+dentro_del_bounding = _core.dentro_del_bounding
+bounding_de = _core.bounding_de
+escalas_thumbnail = _core.escalas_thumbnail
+ruta_destino_captura = _core.ruta_destino_captura
+ALIAS_TECLAS_PYNPUT = _core.ALIAS_TECLAS_PYNPUT
+ESQUEMA_URL = _core.ESQUEMA_URL
+BOTONES = _core.BOTONES
 
 # Marco canonico de la rama (P0-4): pixeles de layout del servidor X / grim.
 MARCO = "px_layout"
-
-
-class Parser(argparse.ArgumentParser):
-    """argparse cuyos errores salen como JSON canonico (P1-7): subcomando o
-    flag invalido => {"error": "argumentos invalidos: ...", "uso": ...} rc 1."""
-
-    def error(self, message):
-        fail("argumentos invalidos: %s" % message,
-             uso=self.format_usage().strip())
-
-
-def checar_abort(motivo="interrumpido"):
-    """Bandera dura: si existe .tmp/ABORT (vigilar.py) la accion NO se emite."""
-    if os.path.exists(ARCHIVO_ABORT):
-        fail("%s: existe la bandera ABORT del .tmp de ESTA skill "
-             "(vigilar.py): un humano pidio parar. Captura la pantalla y "
-             "pregunta antes de continuar." % motivo,
-             bandera=ARCHIVO_ABORT)
-
-
-def checar_pausa(espera_max=300.0):
-    """Bandera suave (P1-5): con .tmp/PAUSA la accion se ESPERA (poll 0.2 s,
-    tope 300 s) hasta que se borre; ABORT tiene prioridad. Sin bandera: un
-    os.path.exists, sin alterar tiempos validados."""
-    if not os.path.exists(ARCHIVO_PAUSA):
-        return
-    inicio = time.time()
-    while os.path.exists(ARCHIVO_PAUSA):
-        checar_abort("pausa interrumpida")
-        if time.time() - inicio > espera_max:
-            fail("PAUSA activa mas de %d s (bandera %s): atiende al usuario, "
-                 "borra la bandera y reanuda, o usa ABORT para cortar la "
-                 "secuencia." % (int(espera_max), ARCHIVO_PAUSA),
-                 bandera_pausa=ARCHIVO_PAUSA)
-        time.sleep(0.2)
 
 
 # --- pyautogui lazy (P2-2: unica copia para pantalla/teclado/raton) --------
@@ -202,7 +210,7 @@ def require(nombre):
                                                "dnf install %s" % nombre))
         fail("La herramienta '%s' no esta en el PATH de Linux." % nombre,
              herramienta=nombre,
-             hint="instalar: %s  |  o bien: %s" % (apt, dnf))
+             hint="instalar: %s | o bien: %s" % (apt, dnf))
     return ruta
 
 
@@ -398,29 +406,27 @@ def monitores():
 
 
 def tamano_virtual():
-    """Bounding de todos los monitores: dict {x, y, ancho, alto} (layout)."""
-    mons = monitores()
-    izq = min(m["izq"] for m in mons)
-    top = min(m["top"] for m in mons)
-    der = max(m["der"] for m in mons)
-    bot = max(m["bot"] for m in mons)
-    return {"x": izq, "y": top, "ancho": der - izq, "alto": bot - top}
+    """Bounding de todos los monitores: dict {x, y, ancho, alto} (layout).
+
+    La formula min/max es generica (_core.bounding_de); la fuente xrandr/
+    sway/hypr es lo unico linux de aqui."""
+    return _core.bounding_de(monitores())
 
 
 def _monitor_contiene(x, y):
-    """Monitor cuyo rectangulo contiene a (x, y) de layout, o None."""
-    xi, yi = int(x), int(y)
-    for m in monitores():
-        if m["izq"] <= xi < m["der"] and m["top"] <= yi < m["bot"]:
-            return m
-    return None
+    """Monitor cuyo rectangulo contiene a (x, y) de layout, o None.
+
+    Comparacion generica (_core.monitor_contiene); aqui solo la lista X11/
+    Wayland de la rama."""
+    return _core.monitor_contiene(monitores(), x, y)
 
 
 def dentro_de_virtual(x, y):
-    """True si (x, y) cae dentro del bounding de layout."""
-    v = tamano_virtual()
-    return (v["x"] <= int(x) < v["x"] + v["ancho"]
-            and v["y"] <= int(y) < v["y"] + v["alto"])
+    """True si (x, y) cae dentro del bounding de layout.
+
+    Comparacion generica (_core.dentro_del_bounding) sobre el tamano_virtual
+    de la rama."""
+    return _core.dentro_del_bounding(tamano_virtual(), x, y)
 
 
 def tamano_pantalla():
@@ -435,24 +441,11 @@ def tamano_pantalla():
 
 # --- Alias de teclas -----------------------------------------------------
 # pyautogui (X11) usa KEYBOARD_KEYS; pynput (X11) expone keyboard.Key con
-# nombres propios; esta tabla traduce alias frecuentes (incluye la del padre
-# duplicada a proposito: el parent es Windows-only y no se puede importar).
-_ALIAS_TECLAS_PYNPUT = {
-    "escape": "esc", "control": "ctrl", "ctr": "ctrl",
-    "windows": "cmd", "win": "cmd", "super": "cmd", "meta": "cmd",
-    "winleft": "cmd_l", "winright": "cmd_r",
-    "del": "delete", "supr": "delete",
-    "espacio": "space", "intro": "enter", "retorno": "enter",
-    "pageup": "page_up", "pagedown": "page_down", "pgup": "page_up",
-    "pgdn": "page_down",
-    "printscreen": "print_screen", "prtsc": "print_screen", "sysrq": "print_screen",
-    "apps": "menu", "altgr": "alt_gr",
-    "break": "pause",
-    "volumemute": "media_volume_mute", "mute": "media_volume_mute",
-    "volumedown": "media_volume_down", "volumeup": "media_volume_up",
-    "playpause": "media_play_pause", "nexttrack": "media_next",
-    "prevtrack": "media_previous", "stop": "media_stop",
-}
+# nombres propios. La tabla ALIAS_TECLAS_PYNPUT que traduce alias frecuentes
+# era copia IDENTICA a la del padre Windows (win/linux comparten esos miembros
+# del enum Key) y vivo a scripts/_core.py: se reexporta arriba. Este
+# envoltorio se queda en la rama: pynput no es stdlib-pura (tecla_pynput_mac
+# en macOS usa SU propia tabla porque darwin no tiene print_screen/pause/menu).
 
 
 def tecla_pynput(nombre):
@@ -462,7 +455,7 @@ def tecla_pynput(nombre):
     if nombre is None:
         return None
     n = str(nombre).strip().lower()
-    n = _ALIAS_TECLAS_PYNPUT.get(n, n)
+    n = ALIAS_TECLAS_PYNPUT.get(n, n)
     return getattr(keyboard.Key, n, None)
 
 

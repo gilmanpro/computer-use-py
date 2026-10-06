@@ -1,15 +1,18 @@
 # -*- coding: utf-8 -*-
-"""autotest.py — autovalidacion de la skill computer-use-py (rama macOS).
+"""autotest.py — suite del MOTOR macOS de computer-use-py.
 
-Checklist EQUIVALENTE al autotest de Windows, adaptado a los verbos reales de
-scripts/macos/ (mismos subcomandos; pynput/Quartz para entrada, screencapture
-+ osascript/System Events + open para lo demas). Modo SEGURO por defecto:
-solo lectura (las capturas/pixels son lectura de pantalla; no se teclea ni se
-mueve el cursor).
-
-Uso (desde la carpeta computer-use-py, en el Mac):
+FASE SEG2: el punto de entrada normal es scripts/<verbo>.py (raiz, multi-OS)
+y la autovalidacion es `python3 autotest.py` en la raiz de la skill — la suite
+raiz (scripts/autotest.py) DELEGA en esta en macOS. Esta llamada directa es la
+via avanzada del motor exclusivo:
     python3 scripts/macos/autotest.py
     python3 scripts/macos/autotest.py --con-escritura
+
+Checklist EQUIVALENTE a la bateria raiz de Windows, adaptado a los verbos
+reales de scripts/macos/ (mismos subcomandos; pynput/Quartz para entrada,
+screencapture + osascript/System Events + open para lo demas). Modo SEGURO por
+defecto: solo lectura (las capturas/pixels son lectura de pantalla; no se
+teclea ni se mueve el cursor).
 
 Requisitos previos leidos como LIMITACIONES (SKIP con motivo, no FAIL):
   - TCC Accesibilidad: sin el, teclado/raton/vigilar no emiten/escuchan
@@ -42,6 +45,8 @@ import sys
 import time
 
 import _compartido_mac as c  # el guard de plataforma vive aqui (sal con 2)
+import _core  # scripts/ ya esta en sys.path (lo inserto _compartido_mac):
+              # se usa SOLO para el autotest de estructura multi-OS (FASE SEG)
 
 RAIZ = c.RAIZ_SKILL
 PY = sys.executable
@@ -208,9 +213,31 @@ def v_capturar(rc, err, d):
         d["ancho"], d["alto"], retina, px_por, _trunca(d.get("via"), 24))
 
 
+def _checks_estructura():
+    """Autotest de estructura multi-OS (FASE SEG/SEG2): (1) la raiz de scripts/
+    contiene SOLO los 7 CLIs multi-OS + _core.py + glue_windows.py + windows/
+    (solo win_especiales.py) + linux/ + macos/; (2) ningun modulo comun redefine
+    los helpers movidos a _core. Check interno puro (lee via _core, stdlib): sin
+    subprocess y sin efectos. Misma logica en las 3 suites (raiz, linux, macos)."""
+    probs = _core.problemas_inventario_scripts()
+    linea("estructura: scripts/ raiz", "(check interno)",
+          "OK" if not probs else "FAIL",
+          "; ".join(probs) if probs
+          else "raiz = 7 CLIs + _core.py + glue_windows.py + windows/(solo "
+               "win_especiales.py) + linux/ + macos/")
+    probs = _core.problemas_redefiniciones()
+    linea("estructura: modulos comunes sin redefiniciones", "(check interno)",
+          "OK" if not probs else "FAIL",
+          "; ".join(probs) if probs
+          else "glue_windows/_compartido_linux/_compartido_mac solo reexportan "
+               "HELPERS_COMUNES")
+
+
 # --- bateria modo lectura ---------------------------------------------------
 
 def bateria_lectura():
+    _checks_estructura()
+
     def v_listar(rc, err, d):
         ok, ev = esperar_ok("monitores", "marco", "plataforma")(rc, err, d)
         if not ok:

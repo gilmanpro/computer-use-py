@@ -1,33 +1,58 @@
 # -*- coding: utf-8 -*-
-"""autotest.py — autovalidacion de la skill computer-use-py (rama WINDOWS).
+"""autotest.py — SUITE de autovalidacion de la skill computer-use-py (raiz).
 
-Bateria sobre TODAS las funciones de scripts/ en modo SEGURO por defecto:
-solo LECTURA (no teclea, no mueve el cursor, no hace clic). Las unicas
-escrituras del modo lectura son PNG dentro del .tmp/ de la skill y el
+FASE SEG2: la suite vive en scripts/ y es MULTI-OS:
+  *     win32: corre la bateria COMPLETA sobre los CLIs de la raiz (la ruta
+    Windows validada en escritorio real) — comportamiento historico intacto
+    (la suite antes vivia dentro de la carpeta de la rama windows/).
+  * linux/darwin: DELEGA en la suite de la rama (scripts/linux|macos/autotest.py)
+    re-emitiendo su tabla y su exit code VERBATIM con el mismo argv.
+  * plataforma desconocida: JSON canonico de error + exit 2 (contrato de los
+    guards; nunca traceback).
+
+Bateria win32 sobre TODAS las funciones de los CLIs en modo SEGURO por
+defecto: solo LECTURA (no teclea, no mueve el cursor, no hace clic). Las
+unicas escrituras del modo lectura son PNG dentro del .tmp/ de la skill y el
 listener PASIVO de vigilar.py durante 1 s (no inyecta nada). Los "errores de
 parser" se validan contra rutas del codigo que abortan ANTES de emitir, de
 modo que tampoco tienen efectos.
 
-Uso (desde la carpeta computer-use-py):
-    py scripts/autotest.py                  :: modo lectura (defecto)
-    py scripts/autotest.py --con-escritura  :: ciclo sandbox completo (humano)
+Uso (desde la carpeta computer-use-py): el PUNTO DE ENTRADA universal es
+`py autotest.py` en la raiz de la skill (portada que llama a ESTA suite).
+Llamada directa a la suite (avanzado, equivalente):
+    py scripts/autotest.py                        :: win32 modo lectura (defecto)
+    py scripts/autotest.py --con-escritura        :: ciclo sandbox (humano)
 
-El modo escritura (que un humano lanza a conciencia) abre el Bloc de notas,
-activa su lienzo, teclea ASCII + unicode, borra con backspace, prueba
+El modo escritura win32 (que un humano lanza a conciencia) abre el Bloc de
+notas, activa su lienzo, teclea ASCII + unicode, borra con backspace, prueba
 clic/doble/arrastre/scroll/mover/combo/dentro de la ventana, la espera
 adaptativa por pixel y cierra SIN guardar (ESC al dialogo de guardado y, si
 aun queda ventana, taskkill del proceso propio). Exige cero ventanas de
 Notepad abiertas al empezar: si hay alguna, el ciclo completo se marca SKIP
 (esto jams toca el trabajo del usuario).
 
+VERIFICADO 06/10/2026 (bug real de entorno capturado por el sandbox): en el
+Bloc de notas de Windows 11 el titulo de una pestana SIN guardar es el
+CONTENIDO del documento ('*Hola...: Bloc de notas'), por lo que el titulo
+CAMBIA al teclear: el cierre identifica la ventana del sandbox por su hWnd
+(clave 'id' del item de listar, estable) y cierra con su titulo actual.
+Ademas, 'abrir' reporta el PID del lanzador y la ventana vive en el proceso
+empaquetado: la limpieza mata el PID REAL del hWnd (GetWindowThreadProcessId)
+ademas del lanzador.
+
 Salida: tabla [funcion | comando | OK/FAIL/SKIP | evidencia] + JSON resumen
 {modo, total, pasados, fallados, skips, veredicto, fallas}. exit 0 si no hay
 FAIL reales; las limitaciones de hardware/entorno son SKIP con motivo
 (p. ej. un solo monitor: la prueba del secundario se omite, no falla).
 
-Equivalentes del mismo checklist: scripts/linux/autotest.py y
-scripts/macos/autotest.py. Este archivo, ejecutado en otro SO, sale con el
-guard de plataforma (error JSON + exit 2).
+Checks de estructura (SEG/SEG2): inventario del layout (scripts/ raiz = 7 CLIs
++ _core.py + glue_windows.py + motor windows/ con solo win_especiales.py +
+linux/ + macos/), modulos comunes sin redefiniciones, ENRUTADOR simulado con
+la plataforma parcheada (sin ejecutar la rama) y verificacion ESTATICA de que
+el glue Windows no puede importarse en linux/darwin.
+
+Equivalentes del mismo checklist para los motores de rama:
+scripts/linux/autotest.py y scripts/macos/autotest.py.
 """
 
 import argparse
@@ -36,14 +61,34 @@ import os
 import subprocess
 import sys
 
-# --- Guard de plataforma --------------------------------------------------
-if sys.platform != "win32":
+# --- Deteccion de plataforma (FASE SEG2: suite MULTI-OS en la raiz) --------
+# win32 continua con la bateria de abajo (ruta intacta). linux/darwin delegan
+# en la suite de su rama con el mismo argv (output + rc VERBATIM, consola
+# heredada). Cualquier otra plataforma: JSON canonico + rc 2.
+_DIR_SCRIPTS = os.path.dirname(os.path.abspath(__file__))
+
+if sys.platform == "win32":
+    pass
+elif sys.platform in ("linux", "darwin"):
+    _SUITE_RAMAS = {"linux": os.path.join("scripts", "linux", "autotest.py"),
+                    "darwin": os.path.join("scripts", "macos", "autotest.py")}
+    _ruta_suite = os.path.join(os.path.dirname(_DIR_SCRIPTS), _SUITE_RAMAS[sys.platform])
+    if not os.path.isfile(_ruta_suite):
+        print(json.dumps({
+            "error": "la suite de la rama no existe o se movio de sitio: %s"
+                     % _ruta_suite,
+            "sistema_operativo": sys.platform,
+            "plataforma": {"linux": "linux", "darwin": "darwin"}[sys.platform],
+        }, ensure_ascii=False))
+        sys.exit(2)
+    sys.exit(subprocess.run([sys.executable, _ruta_suite] + sys.argv[1:]).returncode)
+else:
     print(json.dumps({
-        "error": "scripts/autotest.py es la rama WINDOWS; usa "
-                 "scripts/linux/autotest.py o scripts/macos/autotest.py "
-                 "segun tu SO",
+        "error": "autotest.py: plataforma no soportada (%s); la bateria vive "
+                 "aqui para win32 y las suites de las ramas son "
+                 "scripts/linux/autotest.py y scripts/macos/autotest.py "
+                 "(linux/darwin enrutan solos)" % sys.platform,
         "sistema_operativo": sys.platform,
-        # contrato P0-4: `plataforma` canonica tambien en el guard
         "plataforma": {"win32": "win", "linux": "linux",
                        "darwin": "darwin"}.get(sys.platform, sys.platform),
     }, ensure_ascii=False))
@@ -54,7 +99,18 @@ try:
 except Exception:
     pass
 
-RAIZ = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+# --- autotest de estructura (FASE SEG/SEG2) --------------------------------
+# _core.py vive en scripts/ JUNTO a esta suite: se importa DIRECTAMENTE
+# (stdlib puro, sin pyautogui/DPI) solo para auditar la separacion
+# generico/exclusivo y el plan del enrutador. La logica de los checks de
+# inventario/redefiniciones es unica para las 3 ramas:
+# _core.problemas_inventario_scripts / _core.problemas_redefiniciones.
+if _DIR_SCRIPTS not in sys.path:
+    sys.path.insert(0, _DIR_SCRIPTS)
+import _core  # noqa: E402
+
+# scripts/autotest.py → 2 subidas de nivel hasta la raiz de la skill.
+RAIZ = os.path.dirname(_DIR_SCRIPTS)
 PY = sys.executable
 ABORT = os.path.join(RAIZ, ".tmp", "ABORT")
 PAUSA = os.path.join(RAIZ, ".tmp", "PAUSA")
@@ -84,9 +140,18 @@ def linea(funcion, comando, estado, evidencia):
         FALLAS.append(funcion)
 
 
+def _ruta_cli(nombre):
+    """FASE SEG2: los CLIs viven en scripts/ raiz; SOLO win_especiales.py
+    queda en scripts/windows/ (exclusivo Windows)."""
+    if nombre == "win_especiales.py":
+        return os.path.join("scripts", "windows", nombre)
+    return os.path.join("scripts", nombre)
+
+
 def run(args, timeout=40):
-    """Ejecuta un script de la skill: (rc, stdout-texto, stderr-texto, JSON|None)."""
-    cmd = [PY, os.path.join("scripts", args[0])] + [str(a) for a in args[1:]]
+    """Ejecuta un CLI de la skill (raiz SEG2; win_especiales en su rama):
+    (rc, stdout-texto, stderr-texto, JSON|None)."""
+    cmd = [PY, _ruta_cli(args[0])] + [str(a) for a in args[1:]]
     try:
         p = subprocess.run(cmd, cwd=RAIZ, capture_output=True, timeout=timeout)
     except subprocess.TimeoutExpired:
@@ -101,7 +166,8 @@ def run(args, timeout=40):
 
 
 def comando_de(args):
-    return "py scripts/" + " ".join(str(a) for a in args)
+    return "py " + _ruta_cli(args[0]).replace("\\", "/") + " " + \
+        " ".join(str(a) for a in args[1:])
 
 
 def check(funcion, args, validar, timeout=40):
@@ -118,6 +184,102 @@ def check(funcion, args, validar, timeout=40):
 
 def check_skip(funcion, args, motivo):
     linea(funcion, comando_de(args), "SKIP", motivo)
+
+
+def _checks_estructura():
+    """Autotest de estructura multi-OS (FASE SEG/SEG2): (1) el layout de
+    scripts/ raiz es exactamente los 7 CLIs + _core.py + glue_windows.py +
+    windows/ (solo win_especiales.py) + linux/ + macos/; (2) ningun modulo
+    comun redefine los helpers movidos a _core; (3) el ENRUTADOR re-emitiria
+    la rama con la plataforma parcheada (simulado, sin subprocess); (4) estatico:
+    el glue Windows NO puede importarse antes del enrute. Checks internos
+    puros (leen via _core / texto fuente): sin subprocess y sin efectos."""
+    probs = _core.problemas_inventario_scripts()
+    linea("estructura: scripts/ raiz", "(check interno)",
+          "OK" if not probs else "FAIL",
+          "; ".join(probs) if probs
+          else "raiz = 7 CLIs + _core.py + glue_windows.py + windows/(solo "
+               "win_especiales.py) + linux/ + macos/")
+    probs = _core.problemas_redefiniciones()
+    linea("estructura: modulos comunes sin redefiniciones", "(check interno)",
+          "OK" if not probs else "FAIL",
+          "; ".join(probs) if probs
+          else "glue_windows/_compartido_linux/_compartido_mac solo reexportan "
+               "HELPERS_COMUNES")
+
+
+def _check_enrutador_simulado():
+    """Check SEG2-1 (enrutador): con la plataforma PARCHEADA a linux/darwin,
+    cada CLI de la raiz DEBERIA re-emitir la salida del CLI equivalente de su
+    rama. Se verifica SOLO el plan determinista (_core.plan_enrute): destino
+    correcto, destino instalado y argv VERBATIM — sin ejecutar la rama.
+    win32 debe planificar su ruta nativa y una plataforma desconocida, JSON
+    de error con 'plataforma'."""
+    probs = []
+    for cli in _core.CLI_RAIZ:
+        for plat, rama in (("linux", "linux"), ("darwin", "macos")):
+            argv = ["subfalso", "flagdemo", "valor"]
+            plan = _core.plan_enrute(cli, plat=plat, argv=argv)
+            if plan[0] != "route":
+                probs.append("%s/%s: plan %r (esperaba route)" % (cli, plat, plan[0]))
+                continue
+            ruta, argv_out = plan[1], plan[2]
+            esperado = os.path.join("scripts", rama, cli)
+            if not ruta.endswith(esperado):
+                probs.append("%s/%s: destino %s no acaba en %s" % (cli, plat, ruta, esperado))
+            if not os.path.isfile(ruta):
+                probs.append("%s/%s: destino no instalado: %s" % (cli, plat, ruta))
+            if argv_out != argv:
+                probs.append("%s/%s: argv NO verbatim: %r" % (cli, plat, argv_out))
+        if _core.plan_enrute(cli, plat="win32")[0] != "win":
+            probs.append("%s/win32: no planifica ruta nativa" % cli)
+    plan_ftp = _core.plan_enrute("pantalla.py", plat="sunos")
+    if plan_ftp[0] != "error" or plan_ftp[1].get("plataforma") != "sunos":
+        probs.append("plataforma desconocida: esperaba error+plataforma, got %r" % (plan_ftp,))
+    linea("enrutador: CLI raiz re-emitiria rama (parcheada)", "(check interno)",
+          "OK" if not probs else "FAIL",
+          "; ".join(probs)[:150] if probs
+          else "7 CLIs: linux/darwin->route (destino instalado, argv verbatim), "
+               "win32->nativa, desconocida->error+plataforma; sin ejecutar la rama")
+
+
+def _check_glue_no_import_ramas():
+    """Check SEG2-2 (estatico): el glue Windows no debe poder importarse en
+    linux/darwin — en cada CLI de la raiz la llamada `_core.enrutar(...)`
+    (que sale del proceso) debe aparecer INDENTADA bajo una condicion de
+    sys.platform y ANTES de cualquier 'import glue_windows'. Si el orden se
+    rompiera, en linux el guard del glue (rc 2) sustituiria al enrute."""
+    probs = []
+    for cli in _core.CLI_RAIZ:
+        if cli == "autotest.py":
+            continue  # la suite delega en su propio dispatch, sin glue
+        ruta = os.path.join(_DIR_SCRIPTS, cli)
+        if not os.path.isfile(ruta):
+            probs.append("%s: no existe" % cli)
+            continue
+        with open(ruta, encoding="utf-8") as fh:
+            lineas = fh.read().splitlines()
+        idx_router = next((i for i, l in enumerate(lineas)
+                           if "_core.enrutar(" in l), None)
+        if idx_router is None:
+            probs.append("%s: sin llamada a _core.enrutar()" % cli)
+            continue
+        glue_idx = [i for i, l in enumerate(lineas) if "import glue_windows" in l]
+        if not glue_idx:
+            probs.append("%s: sin 'import glue_windows' (ruta win32 rota?)" % cli)
+            continue
+        if idx_router > min(glue_idx):
+            probs.append("%s: el glue se importaria ANTES de enrutar" % cli)
+        if not lineas[idx_router][:1].isspace():
+            probs.append("%s: enrutar no esta indentado (fuera del guard)" % cli)
+        entorno = lineas[max(0, idx_router - 6):idx_router]
+        if not any("sys.platform" in l and "win32" in l for l in entorno):
+            probs.append("%s: enrutar no esta bajo una condicion sys.platform/win32" % cli)
+    linea("glue Windows no se importa en linux/darwin", "(check estatico)",
+          "OK" if not probs else "FAIL",
+          "; ".join(probs)[:150] if probs
+          else "los 6 CLIs enrutan (indentado, bajo guard sys.platform) antes "
+               "de importar glue_windows")
 
 
 # --- validadores genericos -------------------------------------------------
@@ -177,6 +339,10 @@ def _resumen_claves(d, claves):
 
 def bateria_lectura():
     print("\n== Modo SEGURO (solo lectura) ==")
+
+    _checks_estructura()
+    _check_enrutador_simulado()
+    _check_glue_no_import_ramas()
 
     # monitores --------------------------------------------------------------
     def v_listar(rc, err, d):
@@ -513,6 +679,48 @@ def _matar(pid):
     return True
 
 
+def _titulo_por_hwnd(hwnd):
+    """Titulo ACTUAL de la ventana con ese hWnd (id del item de listar).
+    VERIFICADO 06/10/2026: en Windows 11 el titulo de una pestana sin guardar
+    ES el contenido ('*Hola...: Bloc de notas') y cambia al teclear: el hWnd
+    es el identificador estable del sandbox, el titulo NO."""
+    if hwnd is None:
+        return None
+    rc, _o, _e, d = run(["ventanas.py", "listar"])
+    if isinstance(d, dict):
+        for v in d.get("ventanas", []):
+            if v.get("id") == hwnd:
+                return v["titulo"]
+    return None
+
+
+def _pid_real(hWnd):
+    """PID DUEÑO de la ventana. Notepad 11 es empaquetada: el proceso que
+    muestra la ventana difiere del lanzador que reporta 'abrir' (el stub ya
+    murio); taskkill al pid del stub no cierra nada (VERIFICADO 06/10/2026).
+    ctypes solo se importa aqui (ruta win32 del sandbox)."""
+    import ctypes
+    pid = ctypes.c_ulong()
+    ctypes.windll.user32.GetWindowThreadProcessId(ctypes.c_void_p(int(hWnd)),
+                                                  ctypes.byref(pid))
+    return pid.value
+
+
+def _matar_restantes(restantes, pid_lanzador):
+    """Cierra de raiz las ventanas sandbox restantes: taskkill al PID real
+    de cada hWnd + el lanzador reportado por 'abrir' (por si aun vive)."""
+    matados = []
+    for v in restantes or []:
+        try:
+            pr = _pid_real(v.get("id"))
+        except Exception:
+            pr = None
+        if pr and _matar(pr):
+            matados.append(pr)
+    _matar(pid_lanzador)
+    return matados
+
+
 def bateria_escritura():
     print("\n== Modo ESCRITURA: ciclo sandbox Bloc de notas (humano consciente) ==")
     W = ["sandbox pre-check (0 Notepad abiertos)", "ventanas abrir notepad",
@@ -580,11 +788,13 @@ def bateria_escritura():
         rect = ventana
         cx = rect["left"] + max(rect["ancho"] // 2, 50)
         cy = rect["top"] + max(rect["alto"] // 2, 50)
-        STATE["sandbox"] = {"titulo": titulo, "cx": cx, "cy": cy}
+        STATE["sandbox"] = {"titulo": titulo, "cx": cx, "cy": cy,
+                            "hwnd": ventana.get("id")}
         linea(W[2], "ventanas.py listar (diff)", "OK",
-              "'%s' rect=%dx%d en (%d,%d)" % (titulo, rect["ancho"],
-                                              rect["alto"], rect["left"],
-                                              rect["top"]))
+              "'%s' rect=%dx%d en (%d,%d) hWnd=%s" % (titulo, rect["ancho"],
+                                                      rect["alto"], rect["left"],
+                                                      rect["top"],
+                                                      ventana.get("id")))
 
         def v_ok(rc, err, d2):
             return esperar_ok("ok")(rc, err, d2)
@@ -646,10 +856,15 @@ def bateria_escritura():
             linea(W[14], "pantalla.py esperar --pixel", "FAIL",
                   "no se pudo leer el pixel base: " + _resumen_fallo(rc, err, dpix))
 
-        # W15: cerrar SIN guardar (cerrar -> posible modal -> ESC -> kill propio)
-        rc, _o, err, d5 = run(["ventanas.py", "cerrar", titulo])
+        # W15: cerrar SIN guardar (cerrar -> posible modal -> ESC -> kill propio).
+        # El titulo guardado en W2 quedo VIEJO al teclear (Windows 11 titula la
+        # pestana sucia con el contenido): se re-resuelve por hWnd y se cierra
+        # con el titulo actual. VERIFICADO 06/10/2026.
+        titulo_actual = _titulo_por_hwnd(STATE["sandbox"]["hwnd"]) or titulo
+        rc, _o, err, d5 = run(["ventanas.py", "cerrar", titulo_actual])
         if not (rc == 0 and isinstance(d5, dict) and d5.get("ok")):
-            linea(W[15], comando_de(["ventanas.py", "cerrar", "'%s'" % titulo]),
+            linea(W[15], comando_de(["ventanas.py", "cerrar",
+                                     "'%s'" % _trunca(titulo_actual, 30)]),
                   "FAIL", _resumen_fallo(rc, err, d5))
             return
         subprocess.run([PY, "-c", "import time; time.sleep(0.8)"])
@@ -658,23 +873,30 @@ def bateria_escritura():
         if quedan:
             run(["teclado.py", "tecla", "esc"])  # descarta el modal de guardado
             subprocess.run([PY, "-c", "import time; time.sleep(0.6)"])
-            _matar(pid)  # mata SOLO el proceso que el sandbox lanzo
-            via = "hubo ventana/modal restante: ESC al guardado + taskkill PID %s" % pid
+            # mata SOLO procesos del sandbox: PID real de cada hWnd restante
+            # (el empaquetado, no el stub lanzador) + el lanzador si vive
+            matados = _matar_restantes(quedan, pid)
+            via = ("hubo ventana/modal restante: ESC al guardado + taskkill "
+                   "PIDs reales %s (incl. lanzador %s)" % (matados, pid))
             subprocess.run([PY, "-c", "import time; time.sleep(0.6)"])
         quedan = _ventanas_notepad()
         if isinstance(quedan, list) and not quedan:
-            linea(W[15], comando_de(["ventanas.py", "cerrar", "'%s'" % titulo])
+            linea(W[15], comando_de(["ventanas.py", "cerrar",
+                                     "'%s'" % _trunca(titulo_actual, 30)])
                   + " + limpieza", "OK", via + "; sin ventanas Notepad restantes")
         else:
-            linea(W[15], comando_de(["ventanas.py", "cerrar", "'%s'" % titulo]),
+            linea(W[15], comando_de(["ventanas.py", "cerrar",
+                                     "'%s'" % _trunca(titulo_actual, 30)]),
                   "FAIL", "quedan ventanas tras cerrar/limpiar: %s" % (
                       [v["titulo"] for v in (quedan or [])][:3]))
     finally:
-        # seguridad del sandbox: NO dejar el Bloc abierto ni a medio teclear
+        # seguridad del sandbox: NO dejar el Bloc abierto ni a medio teclear.
+        # Se mata el PID REAL del hWnd restante (Notepad 11 es empaquetada:
+        # el pid del lanzador stub no es el dueño de la ventana) y el stub.
         try:
             restantes = _ventanas_notepad()
             if restantes is None or restantes:
-                _matar(pid)
+                _matar_restantes(restantes or [], pid)
         except Exception:
             pass
 
@@ -684,10 +906,12 @@ def bateria_escritura():
 def main():
     ap = argparse.ArgumentParser(
         prog="autotest.py",
-        description="Autovalidacion de la skill computer-use-py (rama Windows). "
-                    "Por defecto SOLO LECTURA (seguro). --con-escritura ejecuta "
-                    "el ciclo sandbox completo (lanza y cierra el Bloc de notas; "
-                    "exige 0 Notepad abiertos).")
+        description="Autovalidacion de la skill computer-use-py (suite raiz "
+                    "multi-OS; en win32 corre la bateria historica; linux/darwin "
+                    "delegan en la suite de su rama). Por defecto SOLO LECTURA "
+                    "(seguro). --con-escritura ejecuta el ciclo sandbox completo "
+                    "(en Windows: lanza y cierra el Bloc de notas; exige 0 "
+                    "Notepad abiertos).")
     ap.add_argument("--con-escritura", dest="con_escritura",
                     action="store_true",
                     help="ciclo sandbox completo (solo un humano consciente)")
@@ -733,9 +957,10 @@ def main():
         "skips": CONT["skip"],
         "veredicto": veredicto,
         "fallas": FALLAS,
-        "nota": "un FAIL en un check de modo lectura = bug de un script de la "
-                "rama Windows: reportar a @7-cerrador sin parchar a ciegas; "
-                "SKIP = limitacion de hardware/entorno con motivo",
+        "nota": "un FAIL en un check de modo lectura = bug de un CLI de la "
+                "raiz scripts/ (ruta Windows): reportar a @7-cerrador sin "
+                "parchar a ciegas; SKIP = limitacion de hardware/entorno con "
+                "motivo",
     }
     print("\n" + "-" * 140)
     print(json.dumps(resumen, ensure_ascii=False, indent=2))

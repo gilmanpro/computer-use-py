@@ -50,8 +50,8 @@ def _pyautogui():
     return c.pyautogui_lazy()
 
 
-def _tiene_no_ascii(texto):
-    return any(ord(ch) > 127 for ch in texto)
+# _tiene_no_ascii: generico en _core (identico en las 3 ramas); se llama via
+# c.tiene_no_ascii.
 
 
 def _titulo_foco():
@@ -230,7 +230,7 @@ def _ydotool_seq(tokens):
 def _code_de(nombre):
     """Codigo ydotool para un nombre/alias, o None."""
     n = str(nombre).strip().lower()
-    n = c._ALIAS_TECLAS_PYNPUT.get(n, n)
+    n = c.ALIAS_TECLAS_PYNPUT.get(n, n)
     return c.KEY_CODES.get(n)
 
 
@@ -264,7 +264,7 @@ def cmd_escribir(args):
     if via == "auto":
         if sesion == "wayland":
             via = "wtype"
-        elif _tiene_no_ascii(texto):
+        elif c.tiene_no_ascii(texto):
             via = "pynput"
         else:
             via = "pyautogui"
@@ -307,7 +307,7 @@ def cmd_escribir(args):
         "via": via + (" (%s)" % via_clip if via_clip else ""),
         "sesion": sesion,
         "caracteres": len(texto),
-        "contiene_no_ascii": _tiene_no_ascii(texto),
+        "contiene_no_ascii": c.tiene_no_ascii(texto),
         "aviso": "el teclado va a la ventana enfocada (un toast/notificacion "
                  "puede robar el foco): verifica con pantalla.py capturar",
     }
@@ -394,25 +394,21 @@ def cmd_tecla(args):
     c.json_out(item)
 
 
-def _partes_combo(cadena):
-    partes = [p.strip().lower() for p in cadena.split("+") if p.strip()]
-    if not partes:
-        c.fail('Cadena de combo vacia. Formato: "ctrl+shift+esc" (separado '
-               'por +).')
-    return partes
+# _partes_combo: algoritmo generico en _core; el ejemplo del mensaje es de la
+# rama ("ctrl+shift+esc"). Se llama via c.partes_combo(cadena, ejemplo).
 
 
 def _emitir_combo_ydotool(cadena):
     """Combo Wayland por ydotool: mods down -> tecla down/up -> mods up en
     orden inverso, en una sola invocacion. SINTAXIS CODE:1/0 verificada
     (man); CODIGOS de la tabla KEY_CODES = [runtime] salvo 28/38/24/42."""
-    partes = _partes_combo(cadena)
+    partes = c.partes_combo(cadena, "ctrl+shift+esc")
     if len(partes) < 2:
         c.fail("Un combo necesita al menos un modificador y una tecla: "
                '"ctrl+s". Para una tecla suelta usa tecla.')
     mod_codes = []
     for p in partes[:-1]:
-        n = c._ALIAS_TECLAS_PYNPUT.get(p, p)
+        n = c.ALIAS_TECLAS_PYNPUT.get(p, p)
         if n not in c._MODS_YDOTOOL:
             c.fail("Modificador no reconocido para ydotool: %r (validos: "
                    "ctrl, shift, alt, super y sus variantes _l/_r)." % p)
@@ -434,7 +430,7 @@ def cmd_combo(args):
     c.checar_abort("combo")
     c.checar_pausa()
     foco = _verificar_foco_requerido(args.requiere_foco) if args.requiere_foco else None
-    partes = _partes_combo(args.cadena)
+    partes = c.partes_combo(args.cadena, "ctrl+shift+esc")
     sesion = c.deteccion_sesion()
     if sesion == "wayland":
         _emitir_combo_ydotool(args.cadena)
@@ -492,7 +488,7 @@ def cmd_combo(args):
 def cmd_mantener(args):
     c.checar_abort("mantener")
     c.checar_pausa()
-    segundos = min(max(args.segundos, 0.05), 60.0)
+    segundos = c.cap_segundos_mantener(args.segundos)
     nombre = args.tecla.lower()
     sesion = c.deteccion_sesion()
     if sesion == "wayland":

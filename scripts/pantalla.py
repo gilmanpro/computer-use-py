@@ -1,6 +1,11 @@
 # -*- coding: utf-8 -*-
 """pantalla.py — Capturas e inspección visual (skill computer-use-py).
 
+ENTRADA MULTI-OS (FASE SEG2): `python scripts/pantalla.py ...` vale en los 3
+SO — en Windows ejecuta esta ruta nativa (validada en escritorio real); en
+Linux/macOS enruta TRANSPARENTemente al motor de su rama (scripts/linux|macos/)
+re-emitiendo su JSON y su exit code; plataforma desconocida responde JSON + rc 2.
+
 Coordenadas: pixeles del ESPACIO VIRTUAL (origen (0,0) = vértice
 sup-izq del monitor PRIMARIO; negativos hacia la izquierda/arriba con
 monitores vecinos). Mapa exacto de la máquina: monitores.py listar.
@@ -38,7 +43,7 @@ Subcomandos:
              cambiar la conducta).
 
 Ejemplos (desde la carpeta computer-use-py):
-  py scripts/pantalla.py capturar
+  py scripts/pantalla.py capturar                # Windows (python3 en otros SO)
   py scripts/pantalla.py capturar --monitor 1 --max-lado 1280
   py scripts/pantalla.py capturar --monitor virtual
   py scripts/pantalla.py capturar --region -800 0 600 400 --archivo trozo.png
@@ -46,13 +51,24 @@ Ejemplos (desde la carpeta computer-use-py):
   py scripts/pantalla.py esperar --milisegundos 600
   py scripts/pantalla.py esperar --pixel 300 200 --color 255,255,255 --cambia --timeout 5
   py scripts/pantalla.py localizar boton.png --confidence 0.9
+
+En Linux/macOS el mismo comando enruta al motor de la rama (scripts/linux|macos/):
+JSON y exit code identicos, elegidos por esa rama (marco px_layout/puntos_logicos).
 """
 
 import argparse
 import os
+import sys
 import time
 
-import _compartido as c  # importa pyautogui ya con DPI + FAILSAFE + PAUSE
+# Deteccion de plataforma ANTES de los imports exclusivos Windows (pyautogui y
+# PIL pueden trazar un traceback en otro SO; aqui se responde JSON o se enruta).
+if sys.platform != "win32":
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    import _core
+    _core.enrutar("pantalla.py")  # nunca retorna en linux/darwin/desconocida
+
+import glue_windows as c  # importa pyautogui ya con DPI + FAILSAFE + PAUSE
 import pyautogui
 from PIL import Image, ImageGrab
 
@@ -94,59 +110,25 @@ def _color_coincide(x, y, color, tol):
     return abs(r - cr) <= tol and abs(g - cg) <= tol and abs(b - cb) <= tol
 
 
-def _parsear_color(texto):
-    partes = texto.split(",")
-    if len(partes) != 3:
-        c.fail('Color con formato "r,g,b" (tres enteros 0-255 separados por comas, '
-               'sin espacios), no %r.' % texto)
-    try:
-        valores = [int(p) for p in partes]
-    except ValueError:
-        c.fail('Color con componentes no enteros: %r.' % texto)
-    for v in valores:
-        if not 0 <= v <= 255:
-            c.fail("Color fuera de rango 0-255: %r." % texto)
-    return tuple(valores)
-
-
-def _checar_aborto_espera():
-    """Corta una espera larga si el humano pidio parar (bandera de vigilar.py)."""
-    c.checar_abort("esperar interrumpida")
-
-
 def _resolver_monitor(valor):
     """--monitor: None si 'virtual' (bounding completo) | dict del monitor.
 
     Acepta el índice (según el orden de monitores.py listar), 'primario' o
-    una subcadena del nombre (p. ej. 'DISPLAY1'), case-insensitive.
+    una subcadena del nombre (p. ej. 'DISPLAY1'), case-insensitive. El
+    algoritmo es el generico de _core.resolver_monitor (idéntico en las 3
+    ramas); aqui solo viven la FUENTE de la lista (ctypes) y los TEXTOS con
+    jerga de Windows (dwFlags/szDevice), canonicos para esta rama.
     """
-    v = valor.strip().lower()
-    if v in ("virtual", "toda", "todas", "todo"):
-        return None
-    mons = c.monitores()
-    if v in ("primario", "primary"):
-        for m in mons:
-            if m["primario"]:
-                return m
-        c.fail("Ningún monitor figura como primario (dwFlags inesperado). "
-               "Revisa monitores.py listar.")
-    try:
-        idx = int(valor)
-    except ValueError:
-        idx = None
-    if idx is not None:
-        if 0 <= idx < len(mons):
-            return mons[idx]
-        c.fail("Índice de monitor %d fuera de rango (0..%d). "
-               "Mapa: monitores.py listar." % (idx, len(mons) - 1))
-    coincidencias = [m for m in mons if v in m["nombre"].lower()]
-    if len(coincidencias) == 1:
-        return coincidencias[0]
-    if len(coincidencias) > 1:
-        c.fail("La subcadena %r coincide con varios monitores (%s): usa el "
-               "índice." % (valor, [m["nombre"] for m in coincidencias]))
-    c.fail("Ningún monitor tiene el nombre %r (subcadena de szDevice). "
-           "Mapa: monitores.py listar." % valor)
+    return c.resolver_monitor(
+        valor, c.monitores,
+        sin_primario="Ningún monitor figura como primario (dwFlags inesperado). "
+                     "Revisa monitores.py listar.",
+        indice_rango="Índice de monitor %d fuera de rango (0..%d). "
+                     "Mapa: monitores.py listar.",
+        ambiguo="La subcadena %r coincide con varios monitores (%s): usa el "
+                "índice.",
+        sin_nombre="Ningún monitor tiene el nombre %r (subcadena de szDevice). "
+                   "Mapa: monitores.py listar.")
 
 
 def cmd_capturar(args):
@@ -192,30 +174,17 @@ def cmd_capturar(args):
         # Comportamiento histórico intacto: captura del monitor primario.
         imagen = pyautogui.screenshot()
 
-    if args.archivo:
-        # Convencion de la skill: los PNG viven en el .tmp de ESTA skill. Un
-        # nombre pelado (sin separador de carpeta) se resuelve dentro de
-        # .tmp/capturas; una ruta con directorio (relativo o absoluto) se
-        # respeta tal cual para usos explicitos.
-        destino = args.archivo
-        if not (os.path.dirname(destino) or destino.startswith(("\\", "/"))):
-            destino = os.path.join(c.asegurar_capturas(), destino)
-        ruta = os.path.abspath(destino)
-        os.makedirs(os.path.dirname(ruta) or ".", exist_ok=True)
-    else:
-        ruta = os.path.join(
-            c.asegurar_capturas(),
-            "captura_%s.png" % time.strftime("%Y%m%d_%H%M%S"),
-        )
+    # Convencion de destino y matematica del thumbnail: genericos en _core
+    # (identicos en las 3 ramas). Sin --max-lado, escala == (1.0, 1.0).
+    ruta = c.ruta_destino_captura(args.archivo)
     fis_w, fis_h = int(imagen.width), int(imagen.height)
-    escala_x, escala_y = 1.0, 1.0
     if args.max_lado is not None:
-        if args.max_lado < 16:
-            c.fail("--max-lado demasiado pequeño (mínimo 16 px).")
+        c.checar_max_lado(args.max_lado)
         # LANCZOS conserva el aspecto y baja tokens: reescala con la "regla".
         imagen.thumbnail((args.max_lado, args.max_lado), Image.LANCZOS)
-        escala_x = fis_w / float(imagen.width)
-        escala_y = fis_h / float(imagen.height)
+    escala_x, escala_y = c.escalas_thumbnail(fis_w, fis_h,
+                                             int(imagen.width),
+                                             int(imagen.height))
     imagen.save(ruta)
     pw, ph = c.tamano_pantalla()
     px, py = c.posicion_cursor()
@@ -302,12 +271,10 @@ def cmd_esperar(args):
     c.checar_abort("esperar")
     c.checar_pausa()  # P1-5: si hay PAUSA, la espera arranca al reanudarse
     inicio = time.monotonic()
-    if args.pixel is not None:
-        if args.color is None:
-            c.fail("El modo adaptativo requiere --pixel X Y y --color r,g,b juntos.")
-        if not args.cambia and args.estable is None:
-            c.fail("Indica --cambia o --estable M (ms de coincidencia "
-                   "continua) junto a --pixel y --color.")
+    # Coherencia de flags y bucles de espera: genericos en _core (copias
+    # identicas en las 3 ramas). Lo propio de Windows —como leer el pixel con
+    # tolerancia (pyautogui/ImageGrab)— llega al bucle por callback.
+    if c.checar_args_esperar(args.pixel, args.color, args.cambia, args.estable):
         x, y = args.pixel
         if not c.dentro_de_virtual(x, y):
             v = c.tamano_virtual()
@@ -317,33 +284,17 @@ def cmd_esperar(args):
         if c._monitor_contiene(x, y) is None:
             c.fail("Pixel (%d, %d) no cae dentro de ningún monitor (hueco del "
                    "bounding virtual)." % (x, y))
-        color = _parsear_color(args.color)
+        color = c.parsear_color(args.color)
         tol = args.tolerancia
-        if not 0 <= tol <= 255:
-            c.fail("--tolerancia debe estar entre 0 y 255.")
-        limite = min(max(args.timeout, 0.5), 120.0)
-        racha_ini = None
-        cumplida = False
-        while True:
-            coincide = _color_coincide(x, y, color, tol)
-            if args.cambia:
-                cumplida = not coincide
-            else:
-                if coincide:
-                    if racha_ini is None:
-                        racha_ini = time.monotonic()
-                    cumplida = (time.monotonic() - racha_ini) * 1000.0 >= args.estable
-                else:
-                    racha_ini = None
-                    cumplida = False
-            if cumplida or (time.monotonic() - inicio) >= limite:
-                break
-            _checar_aborto_espera()
-            time.sleep(0.1)
-        _checar_aborto_espera()
+        c.validar_tolerancia(tol)
+        limite = c.cap_timeout_esperar(args.timeout)
+        cumplida, ms_esperados = c.esperar_color(
+            lambda: _color_coincide(x, y, color, tol),
+            args.cambia, args.estable, limite, 0.1, inicio,
+            c.checar_aborto_espera)
         c.json_out({
             "cumplida": bool(cumplida),
-            "ms_esperados": int((time.monotonic() - inicio) * 1000),
+            "ms_esperados": ms_esperados,
             "modo": "cambia" if args.cambia else "estable",
             "pixel": [int(x), int(y)],
             "color": list(color),
@@ -355,16 +306,8 @@ def cmd_esperar(args):
                     "continua; FAILSAFE intacto",
         })
         return
-    if args.color is not None or args.cambia or args.estable is not None:
-        c.fail("--color/--cambia/--estable solo valen con --pixel X Y; para "
-               "una pausa fija usa solo --milisegundos N.")
-    ms = min(max(int(args.milisegundos), 0), 30000)
-    restante = ms
-    while restante > 0:
-        paso = min(restante, 200)
-        time.sleep(paso / 1000.0)
-        restante -= paso
-        _checar_aborto_espera()
+    ms = c.cap_ms(args.milisegundos)
+    c.dormir(ms, c.checar_aborto_espera)
     c.json_out({
         "cumplida": True,
         "ms_esperados": ms,
@@ -384,8 +327,7 @@ def cmd_localizar(args):
         kwargs["region"] = tuple(args.region)
     aviso = None
     if args.confidence is not None:
-        if not (0.0 <= args.confidence <= 1.0):
-            c.fail("confidence debe estar entre 0.0 y 1.0.")
+        c.validar_confidence(args.confidence)
         kwargs["confidence"] = args.confidence
     try:
         try:

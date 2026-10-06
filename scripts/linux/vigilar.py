@@ -1,9 +1,11 @@
 # -*- coding: utf-8 -*-
 """vigilar.py — Watchdog de entrada humana, dominio LINUX (computer-use-py).
 
-PORT de scripts/vigilar.py (P0-1 del SPEC): el verbo `vigilar arrancar` existe
-en Windows y macOS y ahora tambien en Linux: sin X11→pynput; Wayland nativo →
-error JSON honesto (coherente con cursor/scroll de la rama), NUNCA traceback
+PORT de la ruta Windows original del watchdog (P0-1 del SPEC): el verbo
+`vigilar arrancar` existe
+en los 3 dominios; aqui es el MOTOR LINUX (la entrada normal es el CLI de la
+raiz scripts/vigilar.py, que enruta a este). X11→pynput; Wayland nativo →
+error JSON honesto (coherente con cursor/scroll del motor), NUNCA traceback
 ni "No such file".
 
 Escucha el teclado durante N segundos y, CUANDO EL BACKEND LO PERMITE,
@@ -28,8 +30,9 @@ Flujo (identico al dominio Windows):
 Garantias: callbacks SOLO marcan eventos en memoria (I/O en el hilo
 principal); NUNCA suppress=True; un listener parado no se reinicia.
 
-Lanzamiento en Linux (desvinculado del terminal del agente):
-  nohup python3 scripts/linux/vigilar.py arrancar --segundos 30 \
+Lanzamiento en Linux (desvinculado del terminal del agente; el CLI de la raiz
+enruta a este motor):
+  nohup python3 scripts/vigilar.py arrancar --segundos 30 \
       --pausar-si-humano > .tmp/vigilar.log 2>&1 &
 
 Subcomandos:
@@ -45,9 +48,7 @@ from pynput import keyboard
 
 
 def cmd_arrancar(args):
-    if not (1 <= args.segundos <= 900):
-        c.fail("--segundos debe estar entre 1 y 900 (no es un demonio "
-               "permanente).")
+    c.validar_segundos(args.segundos)  # rango generico en _core (3x identico)
     sesion = c.deteccion_sesion()
     if sesion != "x11":
         # Wayland nativo/incognito: pynput no tiene listener global de teclado

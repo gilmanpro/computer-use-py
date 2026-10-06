@@ -372,7 +372,7 @@ def cmd_cerrar(args):
 
 # Esquema de URL: >=2 letras/digitos y +-. antes de ':' (descarta "C:\\ruta"
 # del dominio Windows; en mac tambien "file:") o prefijo "www.".
-_ESQUEMA_URL = re.compile(r"^(?:[A-Za-z][A-Za-z0-9+.\-]{1,}:|www\.)")
+_ESQUEMA_URL = c.ESQUEMA_URL  # clasificador URL generico (vive en _core)
 
 
 def _clasificar(objetivo):
