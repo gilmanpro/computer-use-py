@@ -99,6 +99,21 @@ def _estado(ventana):
     }
 
 
+def _item_ventana(ventana):
+    """Item CANONICO multi-rama (P1-2): rect+estado ANIDADADOS y claves
+    comunes (titulo/id/app). Windows conserva ADEMAS las claves planas
+    historicas dentro del item (superset: salida vieja intacta como
+    subconjunto)."""
+    item = {"titulo": ventana.title,
+            "rect": _rect(ventana),
+            "estado": _estado(ventana),
+            "id": getattr(ventana, "_hWnd", None),
+            "app": None}
+    item.update(_rect(ventana))    # left/top/ancho/alto (ruta historica)
+    item.update(_estado(ventana))  # minimizada/maximizada/activa (ruta historica)
+    return item
+
+
 def _buscar(titulo):
     """Ventana unica que coincide con `titulo`, o error JSON con pistas."""
     try:
@@ -126,17 +141,16 @@ def cmd_listar(args):
         if not v.title:
             vacios += 1  # ventanas sin titulo (propias del sistema): se omiten
             continue
-        item = {"titulo": v.title}
-        item.update(_rect(v))
-        item.update(_estado(v))
-        ventanas.append(item)
+        ventanas.append(_item_ventana(v))
     c.json_out({
         "total": len(ventanas),
         "sin_titulo_omitidas": vacios,
         "ventanas": ventanas,
+        "marco": c.MARCO,
         "nota": "rectangulo en el ESPACIO DE PANTALLA VIRTUAL (GetWindowRect: "
                 "negativo hacia la izquierda/arriba con monitores vecinos); "
-                "los estados se leen con getattr (0.0.9)",
+                "los estados se leen con getattr (0.0.9); item canonico: "
+                "'rect'+'estado' anidados (y claves planas legacy)",
     })
 
 
@@ -151,6 +165,8 @@ def cmd_foco(args):
     if ventana is None:
         c.json_out({
             "activa": None,
+            "ventana": None,
+            "marco": c.MARCO,
             "nota": "no hay ventana foreground (pantalla de bloqueo/UAC?): NO "
                     "teclees aun; re-verifica con pantalla.py capturar",
         })
@@ -160,6 +176,11 @@ def cmd_foco(args):
         "titulo": ventana.title,
         "rect": _rect(ventana),
         "estado": _estado(ventana),
+        # P1-2: forma canonica anidada, identica en las 3 ramas (el bloque
+        # "ventana" es lo que debe leer un consumidor portabl; lo de arriba
+        # queda como ruta historica superset).
+        "ventana": _item_ventana(ventana),
+        "marco": c.MARCO,
         "nota": "rect en coordenadas del ESPACIO VIRTUAL; verifica con "
                 "pantalla.py capturar despues de teclear (un toast puede "
                 "robar el foco entre el foco y la emision)",
@@ -186,6 +207,8 @@ def _es_error_seis(exc):
 
 
 def _accion(titulo, nombre_metodo, mensaje_aviso):
+    c.checar_abort(nombre_metodo)  # banderas de vigilar.py (P1-5/P1-6)
+    c.checar_pausa()
     ventana = _buscar(titulo)
     metodo = getattr(ventana, nombre_metodo, None)
     if metodo is None:
@@ -207,6 +230,8 @@ def _accion(titulo, nombre_metodo, mensaje_aviso):
         "titulo": ventana.title,
         "rect": _rect(ventana),
         "estado": _estado(ventana),
+        "ventana": _item_ventana(ventana),
+        "marco": c.MARCO,
         "aviso": mensaje_aviso,
     }
     c.json_out(item)
@@ -341,6 +366,7 @@ def cmd_abrir(args):
         "mecanica": mecanica,
         "pid": proc.pid if proc else None,
         "esperar_segundos": args.esperar,
+        "marco": c.MARCO,
     }
 
     if args.esperar == 0:
@@ -353,6 +379,8 @@ def cmd_abrir(args):
 
     resultado["pista_titulo"] = pista
     ventana = None
+    c.checar_abort("espera de ventana")  # P1-6: el freno dura también aquí
+    c.checar_pausa()                     # P1-5: con PAUSA, la espera se posterga
     limite = c.time.time() + args.esperar
     while c.time.time() < limite:
         try:
@@ -363,13 +391,11 @@ def cmd_abrir(args):
         if nuevas:
             ventana = nuevas[0]
             break
+        c.checar_abort("espera de ventana")
         c.time.sleep(0.25)
 
     if ventana is not None:
-        item = {"titulo": ventana.title}
-        item.update(_rect(ventana))
-        item.update(_estado(ventana))
-        resultado["ventana"] = item
+        resultado["ventana"] = _item_ventana(ventana)
         resultado["nota"] = ("ventana NUEVA con pista %r; rect en el ESPACIO "
                              "VIRTUAL y 'activa' dice si ya recibe el teclado "
                              "(re-verifica con pantalla.py capturar)" % pista)
@@ -394,7 +420,7 @@ def cmd_abrir(args):
 
 
 def construir_parser():
-    parser = argparse.ArgumentParser(
+    parser = c.Parser(
         prog="ventanas.py",
         description="Listar y manejar ventanas de Windows (pygetwindow). "
                     "La coincidencia de titulo es por subcadena; si hay "

@@ -41,6 +41,10 @@ import time
 import _compartido as c  # importa pyautogui ya con DPI + FAILSAFE + PAUSE
 import pyautogui
 
+# Vias validadas EN HANDLER (P1-7): un --via de otra rama o falso debe
+# responder JSON {"error", "validos"}, no stderr de argparse.
+_VIAS = ("auto", "pyautogui", "pynput", "portapapeles")
+
 
 def _tiene_no_ascii(texto):
     return any(ord(ch) > 127 for ch in texto)
@@ -137,6 +141,11 @@ def _escribir_portapapeles(texto):
 
 
 def cmd_escribir(args):
+    c.checar_abort("escribir")
+    c.checar_pausa()
+    if args.via not in _VIAS:
+        c.fail("--via %r invalido para la rama Windows." % args.via,
+               validos=list(_VIAS))
     foco = _verificar_foco_requerido(args.requiere_foco) if args.requiere_foco else None
     texto = args.texto
     via = args.via
@@ -166,6 +175,8 @@ def cmd_escribir(args):
 
 
 def cmd_tecla(args):
+    c.checar_abort("tecla")
+    c.checar_pausa()
     foco = _verificar_foco_requerido(args.requiere_foco) if args.requiere_foco else None
     nombre = args.tecla.lower()
     repeticiones = max(1, args.repeticiones)
@@ -228,6 +239,8 @@ def _partes_combo(cadena):
 
 
 def cmd_combo(args):
+    c.checar_abort("combo")
+    c.checar_pausa()
     foco = _verificar_foco_requerido(args.requiere_foco) if args.requiere_foco else None
     partes = _partes_combo(args.cadena)
     # Camino preferido: pyautogui.hotkey (pulsar en orden, soltar en reversa).
@@ -271,6 +284,8 @@ def cmd_combo(args):
 
 
 def cmd_mantener(args):
+    c.checar_abort("mantener")
+    c.checar_pausa()
     segundos = min(max(args.segundos, 0.05), 60.0)
     nombre = args.tecla.lower()
     via = "pyautogui"
@@ -309,7 +324,7 @@ def cmd_mantener(args):
 
 
 def construir_parser():
-    parser = argparse.ArgumentParser(
+    parser = c.Parser(
         prog="teclado.py",
         description="Teclado para automatizacion de escritorio: tipeo ASCII/"
                     "unicode, teclas sueltas, combos y mantener pulsada. "
@@ -323,9 +338,11 @@ def construir_parser():
     p.add_argument("texto", help="texto literal (usa comillas)")
     p.add_argument("--intervalo", type=float, default=0.05,
                    help="segundos entre caracteres (por defecto 0.05)")
-    p.add_argument("--via", choices=["auto", "pyautogui", "pynput", "portapapeles"],
-                   default="auto", help="auto: pynput si el texto tiene no-ASCII, "
-                   "si no pyautogui; portapapeles = pyperclip + ctrl+v")
+    p.add_argument("--via", default="auto", metavar="VIA",
+                   help="auto|pyautogui|pynput|portapapeles (validado en "
+                        "handler: invalido => JSON error). auto: pynput si el "
+                        "texto tiene no-ASCII, si no pyautogui; portapapeles "
+                        "= pyperclip + ctrl+v")
     p.add_argument("--requiere-foco", dest="requiere_foco", metavar="SUBCADENA",
                    help="abortar SIN emitir si el titulo de la ventana "
                         "foreground no contiene esta subcadena (case-insensitive)")

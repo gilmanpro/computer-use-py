@@ -18,9 +18,12 @@ Salida: JSON por stdout; los errores son JSON con "error".
 Subcomandos:
   capturar   PNG de la pantalla: por defecto el primario (ruta histórica);
              --monitor <indice|primario|virtual|nombre>, --region (coords
-             virtuales, acepta negativos) y --max-lado N (thumbnail LANCZOS
-             ANTES de guardar). El JSON de TODA captura trae "origen"
-             (esquina sup-izq en coords virtuales), "escala" y "regla".
+              virtuales, acepta negativos) y --max-lado N (thumbnail LANCZOS
+              ANTES de guardar). El JSON de TODA captura trae "origen"
+              (esquina sup-izq en coords virtuales), "px_por_unidad_coord"
+              (factor TOTAL imagen->coordenada: la unica cifra para
+              re-escalar), "escala" (solo el recorte --max-lado), "marco"
+              y "regla".
   tamano     Resolución del monitor primario; con --virtual, el bounding
              de todos los monitores y su origen.
   posicion   Posición actual del cursor (GetCursorPos: dentro del primario
@@ -54,12 +57,14 @@ import pyautogui
 from PIL import Image, ImageGrab
 
 _REGLA_REESCALADO = (
-    "coordenada_virtual_x = origen[0] + x_en_la_imagen * fisico.ancho / ancho; "
-    "coordenada_virtual_y = origen[1] + y_en_la_imagen * fisico.alto / alto. "
-    "Si 'escala' > 1 (captura reducida con --max-lado), RE-ESCALA SIEMPRE "
-    "antes de pasar la coordenada a raton.py: sin reescalar el clic golpea "
-    "desplazado. Con 'origen' distinto de [0, 0] suma el offset de la captura "
-    "(coordenadas de imagen -> coordenadas virtuales)."
+    "coordenada_virtual_x = origen[0] + x_en_la_imagen / px_por_unidad_coord; "
+    "coordenada_virtual_y = origen[1] + y_en_la_imagen / px_por_unidad_coord. "
+    "'px_por_unidad_coord' es el factor TOTAL imagen->coordenada (ya incluye "
+    "el recorte --max-lado; en Windows equivale a 'escala'), asi que UN unico "
+    "campo basta para re-escalar: 'escala'/'escala_y' quedan SOLO como factor "
+    "del thumbnail --max-lado. Con 'origen' distinto de [0, 0] suma el offset "
+    "de la captura (coordenadas de imagen -> coordenadas virtuales). Marco: "
+    "'marco' enum del JSON (px_fisicos_virtual en Windows)."
 )
 
 
@@ -105,12 +110,8 @@ def _parsear_color(texto):
 
 
 def _checar_aborto_espera():
-    """Corta una espera larga si el humano pidió parar (bandera de vigilar.py)."""
-    if os.path.exists(c.ARCHIVO_ABORT):
-        c.fail("esperar interrumpida: existe la bandera ABORT del .tmp de ESTA "
-               "skill (vigilar.py): un humano pidió parar. Captura la pantalla "
-               "y pregunta antes de continuar.",
-               bandera=c.ARCHIVO_ABORT)
+    """Corta una espera larga si el humano pidio parar (bandera de vigilar.py)."""
+    c.checar_abort("esperar interrumpida")
 
 
 def _resolver_monitor(valor):
@@ -227,6 +228,10 @@ def cmd_capturar(args):
         "origen": origen,
         "escala": round(escala_x, 6),
         "escala_y": round(escala_y, 6),
+        # P0-3/P0-4: factor TOTAL imagen->coordenada (en Windows == escala) y
+        # marco canonico. `escala` queda reservada al thumbnail --max-lado.
+        "px_por_unidad_coord": round(escala_x, 6),
+        "marco": c.MARCO,
         "regla": _REGLA_REESCALADO,
         "pantalla": {"ancho": pw, "alto": ph},
         "cursor": {"x": px, "y": py},
@@ -244,15 +249,18 @@ def cmd_tamano(args):
             "ancho": v["ancho"],
             "alto": v["alto"],
             "origen": [v["x"], v["y"]],
-            "marco": "pantalla VIRTUAL: bounding de todos los monitores "
-                     "(SM_CX/CYVIRTUALSCREEN; origen SM_X/YVIRTUALSCREEN)",
-            "nota": "rectángulo por monitor: monitores.py listar",
+            "marco": c.MARCO,
+            "nota": "marco historico: pantalla VIRTUAL, bounding de todos los "
+                     "monitores (SM_CX/CYVIRTUALSCREEN; origen "
+                     "SM_X/YVIRTUALSCREEN). Rectangulo por monitor: "
+                     "monitores.py listar",
         })
         return
     w, h = c.tamano_pantalla()
     c.json_out({
         "ancho": w,
         "alto": h,
+        "marco": c.MARCO,
         "nota": "pixels fisicos del monitor PRIMARIO (GetSystemMetrics 0/1); "
                 "el espacio virtual completo (con negativos hacia la "
                 "izquierda) es tamano --virtual",
@@ -261,8 +269,9 @@ def cmd_tamano(args):
 
 def cmd_posicion(args):
     x, y = c.posicion_cursor()
-    c.json_out({"x": x, "y": y, "marco": "monitor primario (pyautogui; "
-                                         "coincide con el virtual dentro del primario)"})
+    c.json_out({"x": x, "y": y, "marco": c.MARCO,
+                "nota": "monitor primario (pyautogui; coincide con el virtual "
+                        "dentro del primario)"})
 
 
 def cmd_pixel(args):
@@ -285,10 +294,13 @@ def cmd_pixel(args):
         via = ("ImageGrab 1 px all_screens (monitor %s: pyautogui.pixel mide "
                "solo el primario)" % m["nombre"])
     c.json_out({"x": args.x, "y": args.y, "r": int(r), "g": int(g), "b": int(b),
-                "marco": "pantalla virtual", "via": via})
+                "marco": c.MARCO, "via": via,
+                "nota": "marco historico: pantalla virtual"})
 
 
 def cmd_esperar(args):
+    c.checar_abort("esperar")
+    c.checar_pausa()  # P1-5: si hay PAUSA, la espera arranca al reanudarse
     inicio = time.monotonic()
     if args.pixel is not None:
         if args.color is None:
@@ -337,8 +349,8 @@ def cmd_esperar(args):
             "color": list(color),
             "tolerancia": tol,
             "timeout_s": limite,
-            "marco": "pantalla virtual",
-            "nota": "poll ~100 ms; timeout agotado => cumplida=false SIN error "
+            "marco": c.MARCO,
+            "nota": "marco historico 'pantalla virtual'; poll ~100 ms; timeout agotado => cumplida=false SIN error "
                     "(el agente decide); --estable M pide M ms de coincidencia "
                     "continua; FAILSAFE intacto",
         })
@@ -357,9 +369,10 @@ def cmd_esperar(args):
         "cumplida": True,
         "ms_esperados": ms,
         "modo": "fijo",
+        "marco": c.MARCO,
         "nota": "sueño simple (default 400 ms, cap 30000) para dejar renderizar "
                 "la UI; FAILSAFE intacto; la bandera ABORT de vigilar.py corta "
-                "la espera",
+                "la espera; PAUSA la posterga",
     })
 
 
@@ -394,6 +407,7 @@ def cmd_localizar(args):
         c.json_out({
             "encontrado": False,
             "imagen": os.path.abspath(args.imagen),
+            "marco": c.MARCO,
             "nota": "locate exige pixeles casi identicos (tema/DPI/antialiasing "
                     "lo rompen); para el loop normal usa capturar + vision. "
                     + limite_marco,
@@ -405,13 +419,14 @@ def cmd_localizar(args):
         "imagen": os.path.abspath(args.imagen),
         "box": [int(box.left), int(box.top), int(box.width), int(box.height)],
         "centro": [int(centro.x), int(centro.y)],
+        "marco": c.MARCO,
         "aviso": aviso,
         "nota": limite_marco,
     })
 
 
 def construir_parser():
-    parser = argparse.ArgumentParser(
+    parser = c.Parser(
         prog="pantalla.py",
         description="Capturas e inspeccion de pantalla (PyAutoGUI + PIL "
                     "ImageGrab). Coordenadas = pixeles del ESPACIO VIRTUAL "

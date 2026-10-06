@@ -131,7 +131,7 @@ def cmd_arrancar(args):
 
 
 def construir_parser():
-    parser = argparse.ArgumentParser(
+    parser = c.Parser(
         prog="vigilar.py",
         description="Watchdog de entrada humana con listener pynput: ESC "
                     "(u otra tecla) humana crea la bandera ABORT en el .tmp "

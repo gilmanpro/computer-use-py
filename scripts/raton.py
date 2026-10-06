@@ -37,6 +37,12 @@ una trayectoria que CRUCE la esquina (0,0) del primario aborta, igual que el
 tween de pyautogui). Tras un FAILSAFE la accion pudo quedar PARCIAL (boton
 sin soltar, medio arrastre): re-captura antes de reintentar.
 
+Banderas del .tmp (vigilar.py, P1-5/P1-6): ABORT corta al inicio de cada
+accion y en cada paso interpolado de mover/arrastrar (el release del boton se
+garantiza igual); PAUSA (flag --pausar-si-humano) detiene el ARRANQUE de la
+accion hasta que se borre (tope 300 s). Sin banderas, coste minimo: un
+os.path.exists.
+
 Salida: JSON por stdout; errores JSON con "error".
 
 Subcomandos:
@@ -101,7 +107,8 @@ def _pynput_mover(x, y, duracion):
     """Movimiento fuera del primario por pynput (SetCursorPos sin clamp:
     unica ruta DOCUMENTADA-GARANTIZADA al espacio virtual). Con duracion>0
     interpola por pasos con failSafeCheck en cada paso (el freno humano de
-    las esquinas del primario sigue vigente)."""
+    las esquinas del primario sigue vigente) y checar_abort por paso (P1-6:
+    ABORT corta el interpolado; sin bandera, solo un os.path.exists)."""
     m, _ = _pynput()
     pyautogui.failSafeCheck()
     if duracion and duracion > 0:
@@ -112,11 +119,23 @@ def _pynput_mover(x, y, duracion):
                           int(y0 + (y - y0) * i / pasos))
             time.sleep(duracion / pasos)
             pyautogui.failSafeCheck()
+            c.checar_abort("mover interpolado")
     else:
         m.position = (int(x), int(y))
 
 
+def _monitor_de(x, y):
+    """Sub-objeto monitor canonico {indice,nombre,primario} del punto dado,
+    o None si cae en hueco/ fuera (P1-3)."""
+    m = c._monitor_contiene(x, y)
+    if m is None:
+        return None
+    return {"indice": m["indice"], "nombre": m["nombre"], "primario": m["primario"]}
+
+
 def cmd_mover(args):
+    c.checar_abort("mover")      # bandera ABORT = no emitir nada (P1-6)
+    c.checar_pausa()             # P1-5: freno suave antes de emitir
     backend = _guard_destino(args.x, args.y)
     ax, ay = c.posicion_cursor()
     if backend == "pyautogui":
@@ -124,12 +143,18 @@ def cmd_mover(args):
     else:
         _pynput_mover(args.x, args.y, args.duracion)
     nx, ny = c.posicion_cursor()
-    c.json_out({"ok": True, "via": backend, "desde": [ax, ay], "hasta": [nx, ny]})
+    c.json_out({"ok": True, "via": backend, "desde": [ax, ay], "hasta": [nx, ny],
+                "marco": c.MARCO, "monitor": _monitor_de(args.x, args.y)})
 
 
 def cmd_click(args):
+    c.checar_abort("click")
+    c.checar_pausa()
     if (args.x is None) != (args.y is None):
         c.fail("Debe indicar --x e --y juntos, o ninguno (clic en la posicion actual).")
+    if args.boton not in _BOTONES:
+        c.fail("Boton %r invalido para la rama Windows." % args.boton,
+               validos=list(_BOTONES))
     backend = _guard_destino(args.x, args.y) if args.x is not None else None
     if backend == "pynput":
         # Doble clic y boton derecho fuera del primario: tambien pynput
@@ -152,6 +177,8 @@ def cmd_click(args):
         "boton": args.boton,
         "doble": bool(args.doble),
         "cursor": [x, y],
+        "marco": c.MARCO,
+        "monitor": _monitor_de(x, y),
         "aviso": "el exito de un clic NO se reporta: en apps elevadas "
                  "pyautogui captura PermissionError en silencio y el clic no "
                  "ocurre. Verifica SIEMPRE con pantalla.py capturar.",
@@ -159,6 +186,11 @@ def cmd_click(args):
 
 
 def cmd_arrastrar(args):
+    c.checar_abort("arrastrar")
+    c.checar_pausa()
+    if args.boton not in _BOTONES:
+        c.fail("Boton %r invalido para la rama Windows." % args.boton,
+               validos=list(_BOTONES))
     r1 = _guard_destino(args.x1, args.y1)
     r2 = _guard_destino(args.x2, args.y2)
     duracion = min(max(args.duracion, 0.1), 30.0)
@@ -177,6 +209,8 @@ def cmd_arrastrar(args):
                 ny = args.y1 + (args.y2 - args.y1) * i / pasos
                 pyautogui.moveTo(nx, ny)
                 time.sleep(retardo)
+                # P1-6: ABORT a medio arrastre corta (el finally suelta SIEMPRE).
+                c.checar_abort("arrastrar")
         finally:
             # Soltar SIEMPRE, incluso si el FAILSAFE interrumpio la trayectoria.
             pyautogui.mouseUp(button=args.boton)
@@ -193,6 +227,7 @@ def cmd_arrastrar(args):
                               int(args.y1 + (args.y2 - args.y1) * i / pasos))
                 time.sleep(retardo)
                 pyautogui.failSafeCheck()
+                c.checar_abort("arrastrar")
         finally:
             m.release(boton)  # soltar SIEMPRE (aunque el FAILSAFE haya cortado)
         via = "pynput (el camino toca un monitor no primario)"
@@ -204,11 +239,15 @@ def cmd_arrastrar(args):
         "hasta": [x, y],
         "boton": args.boton,
         "pasos": pasos,
+        "marco": c.MARCO,
+        "monitor": _monitor_de(x, y),
         "aviso": "verifica el resultado con pantalla.py capturar",
     })
 
 
 def cmd_scroll(args):
+    c.checar_abort("scroll")
+    c.checar_pausa()
     if args.vertical is None and args.horizontal is None:
         c.fail("Indica --vertical N u horizontal N (excluyentes).")
     if (args.x is None) != (args.y is None):
@@ -246,21 +285,27 @@ def cmd_posicion(args):
     from pynput.mouse import Controller as ControladorRaton
 
     vx, vy = ControladorRaton().position
-    m = c._monitor_contiene(vx, vy)
+    # P1-1 (CRITICO, spec): forma canonica plana x/y/marco/via/por_backend{},
+    # identica en las 3 ramas; las lecturas por backend se mudan a por_backend.
     c.json_out({
-        "pyautogui": {"x": int(px), "y": int(py)},
-        "pynput": {"x": int(vx), "y": int(vy)},
-        "monitor": None if m is None else {"indice": m["indice"],
-                                           "nombre": m["nombre"],
-                                           "primario": m["primario"]},
+        "ok": True,
+        "x": int(vx), "y": int(vy),
+        "marco": c.MARCO,
+        "via": "pynput",
+        "monitor": _monitor_de(vx, vy),
+        "por_backend": {
+            "pyautogui": {"x": int(px), "y": int(py)},
+            "pynput": {"x": int(vx), "y": int(vy)},
+        },
         "nota": "ambas lecturas son GetCursorPos: mismo marco virtual (0,0 = "
                 "vertice del primario; negativos con monitores a la "
-                "izquierda/arriba); 'monitor' = quien contiene el cursor",
+                "izquierda/arriba); 'monitor' = quien contiene el cursor; "
+                "x/y canonicos = lectura pynput (marco virtual completo)",
     })
 
 
 def construir_parser():
-    parser = argparse.ArgumentParser(
+    parser = c.Parser(
         prog="raton.py",
         description="Raton para automatizacion de escritorio: mover, clic, "
                     "arrastrar y scroll (vertical y horizontal via pynput). "
@@ -281,8 +326,9 @@ def construir_parser():
     p = sub.add_parser("click", help="clic simple/derecho/doble")
     p.add_argument("--x", type=int, help="coordenada X virtual (opcional; si no, posicion actual)")
     p.add_argument("--y", type=int, help="coordenada Y virtual (opcional)")
-    p.add_argument("--boton", choices=_BOTONES, default="left",
-                   help="boton del raton (por defecto left)")
+    p.add_argument("--boton", default="left", metavar="BOTON",
+                   help="boton del raton: left|right|middle (por defecto left); "
+                        "invalido => error JSON")
     p.add_argument("--doble", action="store_true", help="doble clic")
     p.set_defaults(func=cmd_click)
 
@@ -293,7 +339,8 @@ def construir_parser():
     p.add_argument("y2", type=int, help="destino Y (virtual)")
     p.add_argument("--duracion", type=float, default=0.5,
                    help="segundos totales del arrastre (por defecto 0.5)")
-    p.add_argument("--boton", choices=_BOTONES, default="left", help="boton a mantener")
+    p.add_argument("--boton", default="left", metavar="BOTON",
+                   help="boton a mantener: left|right|middle (validado en handler)")
     p.set_defaults(func=cmd_arrastrar)
 
     p = sub.add_parser("scroll", help="rueda vertical u horizontal (pynput; "

@@ -29,10 +29,27 @@ de pyautogui, no negociable). En un secundario NO hay esquina failsafe: el
 freno alli es la tecla de panico de vigilar.py o Ctrl+C en la consola.
 """
 
-import ctypes
 import json
-import os
 import sys
+
+# --- Guard de plataforma (DEBE ir antes de ctypes.wintypes y de pyautogui) --
+# scripts/ es la rama WINDOWS de la skill. En otro SO hay que usar
+# scripts/linux/ o scripts/macos/: sin este guard el fallo seria un
+# AttributeError de windll o un traceback de pyautogui, no el JSON canonico.
+if sys.platform != "win32":
+    print(json.dumps({
+        "error": "scripts/ es la rama WINDOWS; usa scripts/linux/ o "
+                 "scripts/macos/ segun tu SO",
+        "sistema_operativo": sys.platform,
+        # P0-4: `plataforma` canonica tambien en el guard (contrato uniforme).
+        "plataforma": {"win32": "win", "linux": "linux",
+                       "darwin": "darwin"}.get(sys.platform, sys.platform),
+    }, ensure_ascii=False))
+    sys.exit(2)
+
+import argparse
+import ctypes
+import os
 import time  # reexportado: los scripts duermen con `c.time.sleep(...)`
 from ctypes import wintypes
 
@@ -64,44 +81,75 @@ import pyautogui  # noqa: E402  (deliberado: despues de fijar el DPI)
 pyautogui.FAILSAFE = True   # NO NEGOCIABLE: las 4 esquinas abortan.
 pyautogui.PAUSE = 0.15      # >= 0.1 s entre funciones publicas.
 
-# --- Rutas de la skill -------------------------------------------------
-RAIZ_SKILL = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-DIR_TMP = os.path.join(RAIZ_SKILL, ".tmp")
-DIR_CAPTURAS = os.path.join(DIR_TMP, "capturas")
-ARCHIVO_ABORT = os.path.join(DIR_TMP, "ABORT")
-ARCHIVO_PAUSA = os.path.join(DIR_TMP, "PAUSA")
+# --- Rutas de la skill y helpers stdlib-puro compartidos (SPEC P2-1) -------
+# _core.py vive en scripts/ y es stdlib-puro (seguro en cualquier SO): aqui se
+# reexporta para que los scripts sigan llamando c.json_out/c.fail/... con
+# comportamiento IDENTICO al historico. json_out/fail inyectan `plataforma`
+# (P0-4) en todo JSON que no la traiga.
+_DIR_SCRIPTS = os.path.dirname(os.path.abspath(__file__))
+if _DIR_SCRIPTS not in sys.path:
+    sys.path.insert(0, _DIR_SCRIPTS)
+import _core  # noqa: E402
+
+RAIZ_SKILL = _core.RAIZ_SKILL
+DIR_TMP = _core.DIR_TMP
+DIR_CAPTURAS = _core.DIR_CAPTURAS
+ARCHIVO_ABORT = _core.ARCHIVO_ABORT
+ARCHIVO_PAUSA = _core.ARCHIVO_PAUSA
+
+json_out = _core.json_out
+fail = _core.fail
+tocar = _core.tocar
+borrar = _core.borrar
+asegurar_capturas = _core.asegurar_capturas
+plataforma = _core.plataforma
+
+# Marco de coordenadas canonico de la rama (P0-4: enum cerrado).
+MARCO = "px_fisicos_virtual"
 
 
-def json_out(datos):
-    """Unica via de salida de los scripts: JSON legible por stdout."""
-    print(json.dumps(datos, ensure_ascii=False, indent=2))
+class Parser(argparse.ArgumentParser):
+    """argparse cuyos errores salen como JSON canonico (P1-7).
+
+    subprocess inviable: un `{"error"}` legible vale mas que un stderr de
+    argparse con exit 2. `error()` se dispara en subcomando inexistente,
+    flag invalido, valor de tipo erroneo o argumento requerido que falta.
+    """
+
+    def error(self, message):
+        fail("argumentos invalidos: %s" % message,
+             uso=self.format_usage().strip())
 
 
-def fail(mensaje, **extra):
-    """Error canonico de la skill: imprime JSON con 'error' y sale con 1."""
-    json_out({"error": mensaje, **extra})
-    sys.exit(1)
+def checar_abort(motivo="interrumpido"):
+    """Corta la accion si el humano pidio parar (bandera ABORT de vigilar.py).
+
+    Sin bandera, coste = un os.path.exists (comportamiento intacto)."""
+    if os.path.exists(ARCHIVO_ABORT):
+        fail("%s: existe la bandera ABORT del .tmp de ESTA skill "
+             "(vigilar.py): un humano pidio parar. Captura la pantalla y "
+             "pregunta antes de continuar." % motivo,
+             bandera=ARCHIVO_ABORT)
 
 
-def tocar(archivo):
-    """Crea o refresca un archivo-bandera vacio dentro de .tmp (no bloquea)."""
-    os.makedirs(DIR_TMP, exist_ok=True)
-    with open(archivo, "w", encoding="utf-8"):
-        pass
-
-
-def borrar(archivo):
-    """Elimina un archivo-bandera si existe (estado limpio al arrancar)."""
-    try:
-        os.remove(archivo)
-    except OSError:
-        pass
-
-
-def asegurar_capturas():
-    """Crea .tmp/capturas si falta y devuelve su ruta."""
-    os.makedirs(DIR_CAPTURAS, exist_ok=True)
-    return DIR_CAPTURAS
+def checar_pausa(espera_max=300.0):
+    """Freno suave P1-5: mientras exista .tmp/PAUSA (vigilar --pausar-si-humano)
+    la accion SE ESPERA (poll 0.2 s, tope 300 s) en vez de ejecutarse. ABORT
+    manda sobre PAUSA. Sin bandera, coste = un os.path.exists: la temporizacion
+    validada de inyeccion NO se altera (esto se llama en ARRANQUE de cada
+    accion y en los polls de espera, nunca dentro de los pasos interpolados).
+    """
+    if not os.path.exists(ARCHIVO_PAUSA):
+        return
+    inicio = time.time()
+    while os.path.exists(ARCHIVO_PAUSA):
+        checar_abort("pausa interrumpida")  # ABORT tiene prioridad
+        if time.time() - inicio > espera_max:
+            fail("PAUSA activa mas de %d s (bandera %s): atiende al usuario, "
+                 "borra la bandera y relanza, o usa ABORT para cortar la "
+                 "secuencia." % (int(espera_max), ARCHIVO_PAUSA),
+                 bandera_pausa=ARCHIVO_PAUSA)
+        time.sleep(0.2)
 
 
 def tamano_pantalla():

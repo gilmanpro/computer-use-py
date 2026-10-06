@@ -96,8 +96,9 @@
   (`pantalla.py capturar --monitor|--region`).
 - `pantalla.py capturar --max-lado N`: thumbnail LANCZOS ANTES de guardar;
   el JSON trae `origen` [x, y] (esquina sup-izq de la captura, coords
-  virtuales), `fisico`, `escala` y la `regla`:
-  `coord_virtual = origen + coord_imagen × físico/ancho_imagen` — sin
+  virtuales), `fisico`, `escala` (solo el recorte --max-lado),
+  `px_por_unidad_coord` (factor TOTAL imagen→coordenada) y la `regla`:
+  `coord_virtual = origen + coord_imagen / px_por_unidad_coord` — sin
   re-escalar, los clics salen desplazados. Rendimiento de `all_screens` en
   3840x1200: no publicado [runtime].
 - `localizar` (locateOnScreen de pyscreeze) captura solo el primario
@@ -144,10 +145,12 @@
 
 ## 6. FAILSAFE: esquinas del primario y freno en el secundario
 
-- VERIFICADO (código): `pyautogui.FAILSAFE_POINTS` son las 4 esquinas del
-  monitor PRIMARIO (`pyautogui/__init__.py:573 + 2169-2171`, con `size()` =
-  SM 0/1). Con secundario a la izquierda, las esquinas virtuales (−1920, 0),
-  etc. NO abortan: en el secundario no hay esquina failsafe.
+- La base del FAILSAFE (pyautogui siempre con FAILSAFE=True, FAILSAFE_POINTS =
+  las 4 esquinas del monitor PRIMARIO con `size()` = SM 0/1, `failSafeCheck()`
+  antes de cada llamada; fuente `__init__.py:573 + 2169-2171`) está verificada
+  en `references/pyautogui-api.md` §7 — no se repite aquí. Lo que aporta el
+  multi-monitor: con un secundario a la izquierda, las esquinas VIRTUALES
+  (−1920, 0), etc. NO abortan; en el secundario no hay esquina failsafe.
 - La huida humana clásica a (0,0) (esquina del primario) SIGUE válida.
 - Freno en el secundario: tecla de pánico de `vigilar.py` (bandera ABORT) o
   Ctrl+C en la consola. La spec recomendaba extender `FAILSAFE_POINTS` con
@@ -197,28 +200,16 @@
 
 ## 9. Tabla tarea → comando (multi-monitor)
 
-| Tarea | Comando | Monitor |
-|---|---|---|
-| Listar monitores | `py scripts/monitores.py listar` | mapa completo |
-| ¿Dónde está el cursor? | `py scripts/monitores.py cursor` · `raton.py posicion` | n/a |
-| Diagnóstico sin Python | `powershell ... [Windows.Forms.Screen]::AllScreens` (§2) | n/a (OJO DPI) |
-| Captura del primario | `py scripts/pantalla.py capturar --monitor primario` | primario |
-| Captura del secundario izq. | `py scripts/pantalla.py capturar --monitor 1` (o `DISPLAY2`) | secundario (bbox −1920..0) |
-| Captura total | `py scripts/pantalla.py capturar --monitor virtual --max-lado 1280` | virtual (aquí 3840x1200) |
-| Recorte con negativos | `py scripts/pantalla.py capturar --region -800 0 600 400` | region = coords virtuales |
-| Clic en primario | `py scripts/raton.py click --x 640 --y 300` | primario (pyautogui) |
-| Clic en secundario izq. | `py scripts/raton.py click --x -800 --y 300` | secundario (**pynput**) |
-| Arrastrar entre monitores | `py scripts/raton.py arrastrar -800 400 300 400` | pynput interpolado |
-| Scroll en secundario | `py scripts/raton.py scroll --vertical -5 --x -800 --y 300` | position pynput + scroll pynput |
-| Esperar render/pixel | `py scripts/pantalla.py esperar --milisegundos 600` · `esperar --pixel X Y --color r,g,b --cambia` | pixel en coords virtuales |
-| Ver el foco | `py scripts/ventanas.py foco` · `teclado.py ... --requiere-foco "sub"` | n/a |
-| Mover ventana a otro monitor | código ad-hoc `moveTo(-1920, 0)` [runtime] · atajo `combo "win+shift+left"` [runtime] | → secundario |
+COLLAPSED (SPEC P2-3): esta matriz era espejo del mapa de SKILL.md §4 (rama
+Windows con multi-monitor: `--monitor`, `--region` negativa, pynput fuera del
+primario). La matriz canónica vive en **SKILL.md §4** — léela ahí; los detalles
+de comportamiento multi-monitor están en §2-§8 de este archivo.
 
 ## 10. Límites y riesgos
 
-- `pyscreeze` (locate/pixel en pyautogui) es PRIMARIO-ONLY: sin confidence ni
-  nada en el secundario; `pixelMatchesColor`/`pixel` miden solo el primario
-  (por eso `esperar`/`pixel` fuera del primario leen con ImageGrab 1 px).
+- `pyscreeze` primario-only y el coste de `localizar` (1-2 s, primario-only):
+  ya documentados en §3 de este archivo y en SKILL §4/§6 (SPEC P2-3: sin
+  re-lista aquí).
 - Un upstream de pyautogui puede re-activar el clamp en otra versión: por eso
   el input fuera del primario es SIEMPRE pynput (§4).
 - Escala ≠ 100 % en alguno de los monitores: revalidar el DPI per-monitor

@@ -1,26 +1,39 @@
-# computer-use-py — control del escritorio de Windows 11 como un humano
+# computer-use-py — control del escritorio como un humano (Windows · Linux · macOS)
 
 Skill para agentes: manejar el escritorio real (ratón, teclado, ventanas,
 capturas) **como lo haría un humano**, con un loop de
 `captura → visión → acción → verificación`. Cada acción pasa por un script
 CLI que responde **JSON por stdout** (errores con clave `error` y salida 1),
 así que el agente siempre puede releer el estado antes del siguiente paso.
+La rama **Windows** está validada en escritorio real; **Linux** (X11/Wayland)
+y **macOS** replican los verbos y el contrato con límites honestos (§Ramas).
 
 No es un framework de automatización para terceros: es control del *propio*
 escritorio con frenos humanos deliberados (FAILSAFE, watchdog, verificación
 de foco).
 
+## Ramas y enrutamiento
+
+| SO | Carpeta | Ejecución | Smoke (sin efectos) |
+|---|---|---|---|
+| Windows | `scripts/` | `py scripts/<s>.py <verbo>` | `py scripts/autotest.py` |
+| Linux | `scripts/linux/` | `python3 scripts/linux/<s>.py <verbo>` | `python3 scripts/linux/autotest.py` |
+| macOS | `scripts/macos/` | `python3 scripts/macos/<s>.py <verbo>` | `python3 scripts/macos/autotest.py` |
+
+Correr la rama equivocada responde un JSON "corre en tu SO" (exit 2), nunca
+traceback. Contrato uniforme: `plataforma` en todo JSON, `marco` enum
+(`px_fisicos_virtual`/`px_layout`/`puntos_logicos`), campo único de re-escalado
+`px_por_unidad_coord`, objeto `ventana` anidado `rect`+`estado`, errores JSON.
+
 ## Stack (y por qué)
 
-- **PyAutoGUI** — pirámide principal: capturas, teclado ASCII, ratón y
-  ventanas (pygetwindow). Solo direcciona el monitor primario (FAQ oficial).
-- **pynput** — tres cosas que PyAutoGUI no da bien en Windows: tipeo
-  **unicode real** (ñ, acentos, emojis vía `KEYEVENTF_UNICODE`), **scroll
-  horizontal** (el `hscroll` de pyautogui rueda vertical en silencio) y
-  **listeners** que distinguen entrada humana de la inyectada (`injected`)
-  para el botón de pánico. Además es el motor de ratón **garantizado** fuera
-  del primario (coordenadas virtuales negativas).
-- **pyperclip** — respaldo de tipeo por portapapeles (`ctrl+v`).
+- **PyAutoGUI** (Windows/X11) — capturas, teclado ASCII, ratón y ventanas
+  (pygetwindow). En macOS la rama usa **pynput/Quartz + screencapture**; en
+  Wayland, **grim/ydotool/wtype** por subprocess interno.
+- **pynput** — tipeo unicode real, scroll en ambos ejes y listeners que
+  distinguen entrada humana de la inyectada (`injected`) para el botón de
+  pánico. En Windows es además el motor de ratón garantizado fuera del primario.
+- **pyperclip / pbcopy / xclip** — respaldo por portapapeles según el SO.
 
 ## Instalación
 
@@ -29,13 +42,14 @@ py -m pip install pyautogui pynput pyperclip pygetwindow
 py -m pip install opencv-python   :: opcional, solo para localizar --confidence
 ```
 
-Versiones de referencia: pyautogui 0.9.54, pynput 1.8.2, pygetwindow 0.0.9,
-Pillow ≥ 6.2.0 (las capturas multi-monitor usan `ImageGrab` con
-`all_screens=True`). Con pynput ≤ 1.8.1 el scroll de Windows se emite
-duplicado: usar 1.8.2 como mínimo. Requiere Windows (los scripts fijan DPI
-per-monitor antes de importar nada).
+En Linux/macOS las dependencias (pynput, pillow, pyobjc-framework-Quartz,
+opencv opcional; xdotool/wmctrl/grim/ydotool del sistema) están en
+`references/linux-python.md` §15 y `references/macos-python.md` §11.
+Tras instalar: corre el `autotest.py` de tu SO (modo lectura) como smoke;
+`--con-escritura` lanza un sandbox (Bloc de notas/editor/TextEdit) solo para
+un humano consciente.
 
-## El loop, con comandos reales
+## El loop, con comandos reales (rama Windows; idéntico en las otras con su carpeta)
 
 ```bat
 py scripts/monitores.py listar
@@ -53,40 +67,30 @@ no prueba que el clic haya existido); mantener una **mini-bitácora** de una
 línea `acción→resultado`; y pedir **confirmación humana antes de acciones
 irreversibles** (borrar, enviar, pagar, loguear, credenciales).
 
-## Scripts y subcomandos
+## Scripts
 
-| Script | Subcomandos (ejemplos) |
-|---|---|
-| `monitores.py` | `listar` (mapa de monitores + bounding virtual) · `cursor` (monitor que contiene el cursor) |
-| `pantalla.py` | `capturar` · `capturar --monitor 0\|primario\|virtual\|DISPLAY2` · `capturar --region -800 0 600 400` · `capturar --max-lado 1280` · `tamano [--virtual]` · `posicion` · `pixel x y` · `esperar --milisegundos 600` · `esperar --pixel 300 200 --color 255,255,255 --cambia --timeout 5` · `localizar icono.png --confidence 0.9` (solo primario) |
-| `raton.py` | `mover 640 300 --duracion 0.2` · `click --x -800 --y 300` (fuera del primario = pynput) · `click --boton right --doble` · `arrastrar 100 100 400 350` · `arrastrar -800 400 300 400` (cruza monitores) · `scroll --vertical -5 --x -800 --y 300` · `posicion` |
-| `teclado.py` | `escribir "España ¿cómo?"` (auto pynput si hay no-ASCII) · `escribir "..." --via portapapeles` · `tecla enter --repeticiones 2` · `combo "ctrl+shift+esc"` · `mantener shift --segundos 1` — todos con `--requiere-foco "sub"` opcional |
-| `ventanas.py` | `listar` · `foco` · `abrir "app|URL|archivo" [--esperar s] [--titulo pista]` (lanza sin cmd; con `--esperar` aguarda su ventana nueva) · `activar|minimizar|restaurar|maximizar|cerrar "titulo"` |
-| `vigilar.py` | `arrancar --segundos 30 --pausar-si-humano` (watchdog: tecla de pánico → bandera `ABORT`) |
+Los verbos por SO viven en un solo sitio: **SKILL.md §4** (mapa tarea→comando
+con la tabla SO→carpeta). La rama Windows añade `win_especiales.py`:
+portapapeles (`leer`/`escribir --respaldar`/`estado`), procesos (`listar`/
+`matar --pid --confirmar`), `ejecutar --elevado` (UAC) y `dpi listar` —
+el matar exige `--confirmar` humano y nunca imprime el portapapeles sin
+pedido explícito.
 
 ## Seguridad
 
-- **FAILSAFE siempre encendido**: arrastrar el ratón a cualquiera de las 4
-  esquinas del monitor **primario** aborta la acción con un JSON `error`. No
-  existe flag para desactivarlo.
-- **`--requiere-foco "sub"`** en teclado: lee la ventana foreground ANTES de
-  emitir y aborta sin teclear si el título no coincide (el título real va en
-  el error).
-- **`vigilar.py`** (botón de pánico): un listener pynput distingue entrada
-  humana de la inyectada; la tecla de pánico (ESC por defecto) crea la
-  bandera `ABORT` para que el agente pare, capture y pregunte.
-- Nunca `suppress=True` (dejaría al usuario sin teclado) ni I/O dentro de un
-  callback del listener.
-- En un monitor **secundario no hay esquina failsafe**: allí el freno es la
-  tecla de pánico de `vigilar.py` o Ctrl+C. Tras un abort, la acción puede
-  haber quedado parcial: re-capturar antes de reintentar.
+El detalle normativo vive en **SKILL.md §5** (FAILSAFE siempre encendido,
+banderas `.tmp/ABORT` dura y `.tmp/PAUSA` suave que frena el arranque de
+acciones, `--requiere-foco` antes de teclear, prohibido `suppress=True`,
+re-captura tras un abort). Resumen: el freno humano es parte del contrato,
+no una opción; las cuatro esquinas del monitor primario abortan siempre.
 
 ## Multi-monitor
 
 Las coordenadas son del **espacio virtual** (origen = monitor primario;
 negativos hacia la izquierda/arriba) y el input fuera del primario se enruta
-solo por pynput. Detalle, verificaciones y trampas (como el `region=` que da
-negro): ver `references/monitores-multi.md`.
+solo por pynput (Windows). En Linux es el screen/compositor y en macOS los
+puntos lógicos globales. Detalle, verificaciones y trampas (como el
+`region=` que da negro): `references/monitores-multi.md`.
 
 ## Notas del repo
 
@@ -94,4 +98,5 @@ negro): ver `references/monitores-multi.md`.
   viven en `.tmp/` de esta skill y **no se commitean** (guard en
   `.tmp/.gitignore`).
 - `SKILL.md` es la guía de uso para el agente; `references/` guarda el
-  conocimiento verificado (API, multi-monitor, comandos nativos multi-OS).
+  conocimiento verificado (API, multi-monitor, Linux/macOS por SO, comandos
+  nativos sin Python).

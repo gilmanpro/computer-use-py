@@ -49,6 +49,8 @@ def cmd_listar(args):
             "ancho": v["ancho"], "alto": v["alto"],
             "origen": [v["x"], v["y"]],
         },
+        "marco": c.MARCO,
+        "via": "ctypes EnumDisplayMonitors",
         "nota": "coordenadas del ESPACIO VIRTUAL (negativas hacia la "
                 "izquierda/arriba del primario); der/bot exclusivos "
                 "(ancho = der-izq). El indice sigue el orden de "
@@ -64,7 +66,8 @@ def cmd_cursor(args):
     m = c._monitor_contiene(pt.x, pt.y)
     c.json_out({
         "x": int(pt.x), "y": int(pt.y),
-        "marco": "pantalla virtual (GetCursorPos)",
+        "marco": c.MARCO,
+        "via": "ctypes GetCursorPos",
         "dentro_de_monitor": m is not None,
         "monitor": None if m is None else {
             "indice": m["indice"], "nombre": m["nombre"],
@@ -79,7 +82,7 @@ def cmd_cursor(args):
 
 
 def construir_parser():
-    parser = argparse.ArgumentParser(
+    parser = c.Parser(
         prog="monitores.py",
         description="Mapa de monitores y pantalla virtual en coordenadas "
                     "del espacio virtual (ctypes puro, solo lectura).",
