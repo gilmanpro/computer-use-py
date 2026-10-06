@@ -191,6 +191,7 @@ arriba bastan. Abre una solo si X:
 | `linux-python.md` | estas en Linux (X11 vs Wayland, deps, limites sin FAILSAFE/scroll en Wayland) |
 | `macos-python.md` | estas en macOS (TCC de 3 permisos, Retina, osascript limites) |
 | `comandos-sistema.md` | no hay Python/pip en la maquina (rutas nativas cmd/PowerShell/X11/macOS) |
+| `ARQUITECTURA.md` | quieres el detalle de diseno: dispatch multi-OS en el propio proceso, modulos `<so>_especiales.py` (libreria+CLI), suite autotest unificada con `--golden` y puertas de seguridad (`--foco-id`, gate matar, ppu) |
 
 ## 8. Coordenadas y DPI (marco unico)
 
