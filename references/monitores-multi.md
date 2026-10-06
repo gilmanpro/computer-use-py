@@ -128,7 +128,7 @@
   https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-mouse_event
   (sin `MOUSEEVENTF_ABSOLUTE`, los flags de botón actúan en la posición
   actual: coherente con SetCursorPos previo).
-- Regla de enrutado de la skill (`scripts/raton.py`): destino dentro del
+- Regla de eleccion de backend de la skill (`scripts/raton.py`): destino dentro del
   monitor primario ⇒ pyautogui (tween/duración/PAUSE, comportamiento
   histórico); destino fuera del primario (o cualquier coord negativa) ⇒
   pynput, con `pyautogui.failSafeCheck()` antes de actuar y en cada paso
@@ -175,11 +175,20 @@
   es un monitor.
 - `moveTo(newLeft, newTop)` → `SetWindowPos(hWnd, HWND_TOP, x, y, w, h, 0)`
   (:270-274): sin validación de rango en la librería ⇒ mover una ventana a
-  otro monitor con negativos funciona en la API; [runtime] comprobar en
-  máquina (p. ej. código ad-hoc `gw.getWindowsWithTitle(t)[0].moveTo(-1920, 0)`).
+  otro monitor con negativos funciona en la API. **VERIFICADO en máquina
+  (IMPL-K, 06/10/2026, 3 monitores)**: ya es verbo propio —
+  `py scripts/ventanas.py mover --id N --monitor <indice|primario|nombre>`
+  (o `--x --y` exactos, con `--ancho/--alto` opcionales): JSON canónico con
+  `ventana{rect,estado}` + `monitor{indice,nombre,origen,bounds,primario}`.
+  Caso probado: `--monitor 2` (DISPLAY3, −1920..0) dejó `rect.left=-1920`;
+  caso negativo: `--monitor 987` → error JSON "fuera de rango (0..2)" SIN
+  tocar la ventana (el destino se valida primero). El autotest live corre
+  `mover --monitor primario` (+ secundario si hay ≥2) en el sandbox.
 - Atajo nativo del SO para pasar la ventana activa al monitor vecino:
-  Win+Shift+←/→ ⇒ `py scripts/teclado.py combo "win+shift+left"` (comportamiento
-  del atajo: [runtime]; no es API de las librerías).
+  Win+Shift+←/→ ⇒ `py scripts/teclado.py combo "win+shift+left"` — **NO
+  cuenta: falló sintéticamente en la prueba W11 (rect inmutable, 4 intentos:
+  combo ×2, arrastre de barra ×2, menú sistema — checklist-W11)**. Para
+  mover ventanas entre monitores usa `ventanas.py mover` (SetWindowPos real).
 
 ## 8. DPI: qué está verificado y qué queda pendiente
 
@@ -200,7 +209,7 @@
 
 ## 9. Tabla tarea → comando (multi-monitor)
 
-COLLAPSED (SPEC P2-3): esta matriz era espejo del mapa de SKILL.md §4 (rama
+COLLAPSED (SPEC P2-3): esta matriz era espejo del mapa de SKILL.md §4 (ruta
 Windows con multi-monitor: `--monitor`, `--region` negativa, pynput fuera del
 primario). La matriz canónica vive en **SKILL.md §4** — léela ahí; los detalles
 de comportamiento multi-monitor están en §2-§8 de este archivo.

@@ -7,8 +7,9 @@ license: MIT
 # computer-use-py — control del escritorio como un humano (Windows · Linux · macOS)
 
 Flujo normal: SIEMPRE los CLIs de `scripts/` (raiz) en los 3 SO — el mismo
-comando decide su plataforma: en Windows ejecuta la ruta nativa validada; en
-Linux/macOS enruta solo al motor de la rama. Piramide: **PyAutoGUI** (capturas,
+comando ejecuta EN EL PROPIO PROCESO la ruta de TU SO (dispatch sys.platform
+en runtime); en Linux/macOS lo exclusivo vive en
+`scripts/<rama>/<so>_especiales.py` (CLI aparte y libreria). Piramide: **PyAutoGUI** (capturas,
 locate*, teclado ASCII, raton/ventanas via pygetwindow) + **pynput** (scroll,
 unicode real, media keys, listeners con `injected`) + **pyperclip** (pegado) +
 glue DPI/ctypes en Windows. Todo CLI responde JSON por stdout; los errores son
@@ -18,7 +19,10 @@ JSON con clave `error`; nada apaga el FAILSAFE. `py` (Win) / `python3` (otros).
 
 | Tarea | Comando (raiz de la skill) |
 |---|---|
-| Abrir app esperando su ventana | `py scripts/ventanas.py abrir notepad --esperar 8 --titulo "Bloc"` |
+| Abrir app y guardar su id | `py scripts/ventanas.py abrir "C:\...\nota.txt" --esperar 8 --esperar-nueva` → `ventana.id` (la pista por titulo falla con titulos localizados) |
+| Mover ventana a otro monitor | `py scripts/ventanas.py mover --id N --monitor 1` (NO Win+Shift ni arrastrar la barra: fallan sinteticamente) |
+| Zona libre antes de clic/arrastre | `py scripts/ventanas.py ocupantes x1 y1 x2 y2` (READ-ONLY, coords virtuales) |
+| Restaurar portapapeles del respaldo | `py scripts/windows/win_especiales.py portapapeles restaurar` (nunca imprime contenido) |
 | Screenshot que el agente lee | `py scripts/pantalla.py capturar --max-lado 1280` → leer el PNG del JSON con vision |
 | Foco actual (quien recibe el teclado) | `py scripts/ventanas.py foco` |
 | Escribir unicode real | `py scripts/teclado.py escribir "España ¿cómo? 😀"` |
@@ -69,7 +73,10 @@ referencias (tabla de §7).
 2. Capturar: `py scripts/pantalla.py capturar --max-lado 1280`
 3. Leer el PNG del JSON "archivo" con vision; coordenada real =
    `origen + px_imagen / px_por_unidad_coord` (§8).
-4. Actuar: `py scripts/raton.py ...` / `teclado.py ...` / `ventanas.py ...`
+4. Actuar: `py scripts/raton.py ...` / `teclado.py ...` / `ventanas.py ...`.
+   Regla de id (P0.1): abre → GUARDA `ventana.id` del JSON (`abrir
+   --esperar-nueva`) → trabaja con `--foco-id`/`--id` (el titulo es contenido
+   compartido y cambia al teclear; solo el hWnd es estable).
 5. Esperar render: `py scripts/pantalla.py esperar --milisegundos 600`
    (o adaptativo `--pixel X Y --color r,g,b --cambia|--estable M`).
 6. Verificar: `capturar` de nuevo y comparar con lo esperado; escribe UNA
@@ -85,24 +92,37 @@ referencias (tabla de §7).
 | CLI de la raiz (los 3 SO) | Verbos |
 |---|---|
 | `monitores.py` | `listar` · `cursor` |
-| `pantalla.py` | `capturar [--region x y w h | --monitor N | --max-lado N]` · `tamano [--virtual]` · `posicion` · `pixel x y` · `esperar` · `localizar img.png [--confidence]` (solo primario) |
-| `teclado.py` | `escribir [--via pynput|portapapeles] [--requiere-foco "sub"]` · `tecla enter [--repeticiones N]` · `combo "ctrl+s"` · `mantener shift --segundos 1` |
+| `pantalla.py` | `capturar [--region x y w h | --monitor N | --max-lado N]` · `tamano [--virtual]` · `posicion` · `pixel x y` · `esperar [--mientras "argv hijo"] [--auto-pixel --region x y w h]` · `localizar img.png [--confidence]` (solo primario) |
+| `teclado.py` | `escribir [--via pynput|portapapeles] [--requiere-foco "sub"] [--foco-id N]` · `tecla enter [--repeticiones N] [--foco-id N]` · `combo "ctrl+s" [--foco-id N]` · `mantener shift --segundos 1` |
 | `raton.py` | `mover x y [--duracion]` · `click [--x --y] [--boton] [--doble]` · `arrastrar x1 y1 x2 y2` · `scroll --vertical|-horizontal` · `posicion` (fuera del primario el input va por pynput) |
-| `ventanas.py` | `listar` · `foco` · `activar|minimizar|restaurar|maximizar|cerrar "titulo"` · `abrir "programa|url|ruta" [--esperar SEG] [--titulo "sub"]` (minimizada: `restaurar` ANTES de `activar`) |
+| `ventanas.py` | `listar` · `foco [--con-dueno]` · `activar|minimizar|restaurar|maximizar|cerrar "titulo" | --id N` (`cerrar --id N --descartar`: ladder anti-modal W11) · `mover "titulo" | --id N (--monitor K|primario|nombre | --x --y) [--ancho --alto]` · `ocupantes x1 y1 x2 y2` · `abrir "programa|url|ruta" [--esperar SEG] [--titulo "sub"] [--esperar-nueva]` (minimizada: `restaurar` ANTES de `activar`) |
 | `vigilar.py` | `arrancar --segundos N [--pausar-si-humano]` — tecla de panico humana → `.tmp/ABORT` |
 
-Exclusivos (el resto del flujo NO baja a estas carpetas):
-`scripts/windows/win_especiales.py` (portapapeles leer/escribir --respaldar/estado,
-procesos listar/matar --confirmar, ejecutar --elevado UAC, dpi listar) |
-`scripts/linux/` (motor X11/Wayland: xdotool/wmctrl/xrandr/grim/ydotool/wtype) |
-`scripts/macos/` (motor: osascript/screencapture/Quartz/pynput). En Linux/macOS
-los CLIs raiz enrutan a su motor con salida VERBATIM; correr la rama equivocada
-responde JSON "corre en tu SO" (rc 2), nunca traceback.
+Exclusivos — regla dura: el flujo normal es SIEMPRE `scripts/<verbo>.py` en los
+3 SO; cada carpeta `<rama>/` guarda SOLO lo exclusivo del SO, un unico archivo
+CLI+libreria. El CLI raiz en Linux/macOS ejecuta en el propio proceso su ruta
+importando la LIBRERIA (esa libreria es importable en cualquier SO, sin guard);
+correr el CLI EXCLUSIVO de otro SO responde JSON `error` rc 2, nunca
+traceback — exacto por rama: linux/mac con el guard en su `__main__` ("dominio
+EXCLUSIVO" antes de parsear) y `win_especiales` muriendo ya en el IMPORT de
+`glue_windows` (guard de import, mismo JSON+rc 2):
+`scripts/windows/win_especiales.py` (portapapeles leer/escribir --respaldar/estado/
+restaurar, procesos listar/matar --confirmar con gate multi-ventana (P0.2: >1 ventana
+visible del PID = bloqueado, salvable con --forzar), ejecutar --elevado UAC, dpi listar) |
+`scripts/linux/linux_especiales.py` (CLI: sesion, xrandr, grim, portapapeles
+leer|escribir, wayland-status; LIBRERIA X11/Wayland: xrandr/swaymsg/hyprctl,
+grim, wtype/ydotool, wmctrl/xdotool, xclip — la usan los CLIs raiz en su rama) |
+`scripts/macos/macos_especiales.py` (CLI: tcc, screencapture, monitores-quartz,
+ventanas-se, open; LIBRERIA: osascript/System Events, screencapture, Quartz,
+kVK/alias teclado, hints TCC, escala Retina).
 
 **Autotest — entrada unica e invariable**: `py autotest.py` / `python3 autotest.py`
-(raiz de la skill): detecta el SO, corre la bateria de `scripts/autotest.py` en
-Windows y en linux/darwin delega en la suite del motor. `--con-escritura`
-(sandbox: Bloc/editor/TextEdit) solo humano. Via avanzada: suites directas.
+(raiz de la skill) → UNA sola suite unificada en `scripts/autotest.py`: bateria
+completa del SO anfitrion + checks estaticos de simetria (los `<so>_especiales`
+existen/compilan/importan, dispatch presente en los 6 CLIs, guard del CLI
+exclusivo, contrato documentado); los checks que requieren SO ajeno real salen
+SKIP con motivo. `--con-escritura` (sandbox: Bloc/editor/TextEdit) solo en el
+SO anfitrion y solo humano.
 
 ## 5. Seguridad
 
@@ -137,8 +157,16 @@ Windows y en linux/darwin delega en la suite del motor. `--con-escritura`
   estables con `--region` pequena, no para el loop.
 - Hardcodear coordenadas de otra sesion: resolucion/tema/monitores cambian;
   decide sobre la captura actual.
-- Escribir sin verificar foco: un toast de W11 lo roba; `ventanas.py foco` o
-  `--requiere-foco "sub"` antes de emitir.
+- Escribir sin verificar foco: un toast de W11 lo roba; `--requiere-foco "sub"`
+  o `--foco-id N` antes de emitir. En apps multi-ventana (Notepad 11) la
+  subcadena NO basta: el titulo es contenido compartido; usa `--foco-id`.
+- `cerrar` a secas en W11: el sheet de guardado vive en la MISMA HWND (ok y la
+  ventana persiste); usa `cerrar --id N --descartar`.
+- `taskkill /IM notepad.exe`: Notepad 11 comparte proceso y mata las ventanas
+  del usuario con rc=0 (incidente VERIFICADO); usa `ventanas.py cerrar --id`
+  (`procesos matar` ya bloquea PIDs con >1 ventana visible).
+- Mover ventanas con Win+Shift o arrastrando la barra: fallan sinteticamente
+  (rect inmutable, W11); usa `ventanas.py mover --id N --monitor K`.
 - `ctrl+letra` a ciegas: colisiona con aceleradores locales (Notepad ES:
   `ctrl+a` abre "Abrir"); verifica con captura.
 - Insistir con el raton en un dropdown que no responde: pasa al teclado
@@ -181,4 +209,4 @@ arriba bastan. Abre una solo si X:
 - Backend (VERIFICADO): dentro del primario pyautogui (tween y PAUSE
   historicos); fuera o con coord negativa, pynput (`SetCursorPos` garantizado;
   el clamp de pyautogui 0.9.54 esta solo COMENTADO: prohibido depender).
-  `raton.py` enruta solo. FAILSAFE: las 4 esquinas del PRIMARIO (§5).
+  `raton.py` elige el backend solo. FAILSAFE: las 4 esquinas del PRIMARIO (§5).

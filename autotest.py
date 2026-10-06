@@ -9,12 +9,15 @@ exit code, con la consola heredada:
 
     py autotest.py                  :: modo lectura (defecto, seguro)
     py autotest.py --con-escritura  :: ciclo sandbox del SO (SOLO un humano)
+    py autotest.py --golden captura|comparar  :: byte-identity (P2.1, humano)
 
-La suite decide por plataforma (FASE SEG2): win32 corre la bateria historica
-sobre los CLIs de scripts/; linux/darwin delegan en la suite de su rama
-(motor exclusivo); plataforma desconocida responde JSON canonico + exit 2.
-Llamada directa avanzada a la suite: py scripts/autotest.py (y las suites de
-rama: python3 scripts/linux/autotest.py, python3 scripts/macos/autotest.py).
+La suite decide por plataforma (FASE SEG3): win32 corre la bateria historica
+sobre los CLIs de scripts/ MAS los checks estaticos multi-OS; linux/darwin
+corren estructura, dispatch y estaticos de los especiales, con la bateria
+Windows y las baterias reales de la otra rama como SKIP con motivo;
+plataforma desconocida responde JSON canonico + exit 2.
+Llamada directa avanzada a la suite: py scripts/autotest.py (es UNA sola
+suite unificada: ya no existen suites de rama).
 
 Este archivo es stdlib-puro (json/os/subprocess/sys): no importa pyautogui ni
 APIs del SO, por eso puede ejecutarse en cualquier plataforma antes de tener

@@ -294,6 +294,12 @@ Regla práctica: si hay Python, usa la skill (`computer-use-py`); estas tablas s
     lanzar en la jerarquía de `loginwindow`; fallos por Accesibilidad/Screen Recording → §G.
 13. **Asumir que Wayland tiene "el equivalente de xdotool" listo**: no existe; compositor-dependiente
     (wiki); instalar y configurar servicio (`ydotool.service`) es obligatorio.
+14. **Mover ventanas entre monitores con gestos sintéticos (Win+Shift o arrastre de barra)**:
+    el `rect` resultó INMUTABLE por esas vías en la prueba W11 (combo ×2, arrastre ×2, menú
+    sistema: los 4 fallaron — checklist-W11). La vía real es `SetWindowPos`:
+    `ventanas.py mover --id N --monitor K` (skill). Y **nunca `taskkill /IM notepad.exe`**:
+    Notepad 11 comparte proceso entre ventanas/pestañas — mata trabajo ajeno con rc=0
+    (incidente W11; el CLI de la skill lo bloquea con gate multi-ventana).
 
 ---
 

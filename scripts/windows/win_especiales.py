@@ -18,8 +18,13 @@ Verbos (y por que no existen hoy, segun el spec):
                  el contenido. NUNCA se imprime texto del portapapeles salvo
                  `leer` explicito.
   procesos       ventanas.py lista VENTANAS y `cerrar` es graceful-close; aqui
-                 tasklist/taskkill por PID con gate --confirmar (tarea real:
-                 "cierra la app colgada"). Se rechaza el propio PID.
+                  tasklist/taskkill por PID con gate --confirmar (tarea real:
+                  "cierra la app colgada"). Se rechaza el propio PID. GATE
+                  MULTI-VENTANA (IMPL-K P0.2, incidente W11): si el PID tiene
+                  >1 ventana visible el kill se BLOQUEA (taskkill se lleva
+                  todas, incluido trabajo ajeno); se salva solo con --forzar
+                  (el exito lleva 'aviso'). La via quirurgica es
+                  ventanas.py cerrar --id N.
   ejecutar       ventanas.py abrir lanza SIN elevacion; --elevado usa
                  ShellExecuteW "runas" (UAC). Ojo (SKILL 1): elevar una app no
                  permite seguir inyectandole teclas desde este proceso NO
@@ -34,17 +39,21 @@ Rutas paralelas documentadas (no interferir):
     (que reutiliza teclado.py combo ctrl+v, sin duplicar la emision).
 
 Subcomandos:
-  portapapeles leer     [--formato auto|text]
-  portapapeles escribir "TEXTO" [--respaldar] [--pegar]
+  portapapeles leer      [--formato auto|text]
+  portapapeles escribir  "TEXTO" [--respaldar] [--pegar]
   portapapeles estado
+  portapapeles restaurar [--desde RUTA | --ultimo]   (nunca imprime contenido)
   procesos listar       [--nombre X] [--con-ventana]
   procesos matar        --pid N [--arbol] [--forzar] --confirmar
+                        (gate: >1 ventana visible del PID => bloqueado sin
+                        --forzar; ver GATE MULTI-VENTANA arriba)
   ejecutar              "OBJ" [--args ...] [--elevado] [--dir D]
   dpi listar
 
 Ejemplos (desde la carpeta computer-use-py):
   py scripts/windows/win_especiales.py portapapeles estado
   py scripts/windows/win_especiales.py portapapeles escribir "hola" --respaldar
+  py scripts/windows/win_especiales.py portapapeles restaurar
   py scripts/windows/win_especiales.py procesos listar --nombre notepad.exe --con-ventana
   py scripts/windows/win_especiales.py procesos matar --pid 4321 --confirmar
   py scripts/windows/win_especiales.py ejecutar notepad --elevado
@@ -59,6 +68,7 @@ import re
 import shutil
 import subprocess
 import sys
+import time  # timestamp de los respaldos rotativos (P2.4)
 
 # El glue WINDOWS vive en scripts/ (padre de esta rama): se importa ANTES que
 # ctypes.wintypes (exclusivo win32) para que en otro SO responda el guard JSON
@@ -166,12 +176,31 @@ def cmd_portapapeles_estado(args):
                 "nota": "estado sin exponer el contenido (usa `leer` para eso)"})
 
 
+def _backups_clipboard():
+    """Rutas de respaldo del .tmp ordenadas de ANTIGUO a NUEVO (P2.4: el
+    respaldo es rotativo `clipboard_backup_<ts>.txt`; el viejo nombre fijo
+    clipboard_backup.txt sigue siendo elegible con --desde)."""
+    try:
+        nombres = [n for n in os.listdir(c.DIR_TMP)
+                   if n.startswith("clipboard_backup") and n.endswith(".txt")]
+    except OSError:
+        return []
+    rutas = [os.path.join(c.DIR_TMP, n) for n in nombres]
+    rutas.sort(key=lambda r: (os.path.getmtime(r), r))
+    return rutas
+
+
 def cmd_portapapeles_escribir(args):
     backup = None
     prev = None
     if args.respaldar:
         prev = _clipboard_actual()
-        ruta = os.path.join(c.DIR_TMP, "clipboard_backup.txt")
+        # P2.4 IMPL-K: nombre ROTATIVO con timestamp — un segundo --respaldar
+        # en la misma corrida ya NO pisa el backup original (patrón de
+        # incidente latente visto en W11: doble backup).
+        ruta = os.path.join(c.DIR_TMP,
+                            "clipboard_backup_%s.txt" % time.strftime(
+                                "%Y%m%d_%H%M%S"))
         try:
             # SEG2 G1.4: el respaldo exige DIR_TMP exista (la skill puede
             # arrancar con .tmp/ casi vacia: los demas writes ya usan makedirs).
@@ -188,6 +217,12 @@ def cmd_portapapeles_escribir(args):
         # Reutiliza ctrl+v de teclado.py (ruta unica de emision de combos).
         pegado_rc = _teclado_combo("ctrl+v")
         pegado = pegado_rc == 0
+    nota = ("`--pegar` exige el foco correcto de la app destino (verifica "
+            "con pantalla.py capturar)")
+    if backup is not None:
+        nota = ("para RESTAURAR el contenido previo: `portapapeles restaurar` "
+                "(usa el ultimo respaldo %s; sin imprimir el contenido)"
+                % backup) + "; " + nota
     c.json_out({
         "ok": True,
         "escrito_chars": len(args.texto),
@@ -196,10 +231,46 @@ def cmd_portapapeles_escribir(args):
         "backup_vacio": bool(args.respaldar) and not prev,
         "pegado": pegado,
         "pegado_rc": pegado_rc,
-        "nota": "para RESTAURAR el contenido previo: portapapeles escribir "
-                "<contenido del backup> (leelo con `portapapeles leer` o desde "
-                "la ruta de 'backup'); `--pegar` exige el foco correcto de la "
-                "app destino (verifica con pantalla.py capturar)",
+        "nota": nota,
+    })
+
+
+def cmd_portapapeles_restaurar(args):
+    """IMPL-K P1.2-e: reescribe el portapapeles desde un respaldo SIN imprimir
+    jamas el contenido (absorbe el driver de 56 lineas p2_restaurar.py y el
+    paso manual que exigia la nota de --respaldar)."""
+    if args.desde and args.ultimo:
+        c.fail("--desde y --ultimo son excluyentes (uno u otro).")
+    if args.desde:
+        ruta = args.desde
+        if not os.path.isfile(ruta):
+            c.fail("--desde %r no existe." % ruta,
+                   respaldo=None)
+    else:
+        backups = _backups_clipboard()
+        if not backups:
+            c.fail("No hay respaldos en %s (usa `portapapeles escribir ... "
+                   "--respaldar` antes de pisar)." % c.DIR_TMP,
+                   respaldo=None)
+        ruta = backups[-1]  # --ultimo y default: el mas reciente
+    try:
+        with open(ruta, encoding="utf-8") as fh:
+            texto = fh.read()
+    except OSError as exc:
+        c.fail("No se pudo leer el respaldo %r: %s" % (ruta, exc))
+    texto = texto.rstrip("\x00")  # CF_UNICODETEXT puede arrastrar \0 final
+    _clipboard_escribir(texto)
+    verif = _clipboard_actual() or ""
+    c.json_out({
+        "ok": True,
+        "restaurado_chars": len(texto),
+        "backup": ruta,
+        "contenido": "no impreso",
+        "verificado_largo": len(verif),
+        "coincide": len(verif) == len(texto),
+        "nota": "el contenido jamas se imprime ni se loggea (regla de la "
+                "skill: secretos por canal seguro); 'coincide' compara solo "
+                "largos",
     })
 
 
@@ -321,6 +392,25 @@ def cmd_procesos_matar(args):
     if not existe:
         c.fail("No existe ningun proceso con PID %d (tasklist no lo encuentra)."
                % args.pid, procesado=False)
+    # GATE MULTI-VENTANA (IMPL-K P0.2 — incidente VERIFICADO W11: taskkill
+    # sobre el proceso Notepad COMPARTIDO cerro 3 ventanas del usuario con
+    # rc=0). taskkill mata el PROCESO y con el TODAS sus ventanas: antes de
+    # disparar se consulta _ventanas_por_pid() (helper ya existente en este
+    # modulo) y con >1 ventana visible el kill es rechazo por defecto; se
+    # salva solo con --forzar (que ademas deja aviso en el exito). La via
+    # quirurgica sigue siendo ventanas.py cerrar --id N.
+    visibles = _ventanas_por_pid().get(args.pid, [])
+    if len(visibles) > 1 and not args.forzar:
+        c.fail("PID %d tiene %d VENTANAS VISIBLES: taskkill cerraria TODAS "
+               "(incluido trabajo ajeno sin guardar — incidente VERIFICADO "
+               "W11 con Notepad 11, que comparte proceso entre ventanas/"
+               "tabs). Cierra SOLO la tuya con ventanas.py cerrar --id N "
+               "--descartar; si de verdad quieres el proceso completo con "
+               "todas sus ventanas, repite con --forzar asumiendo el dano."
+               % (args.pid, len(visibles)),
+               ventanas_visibles=visibles, pid=args.pid,
+               pista="ventanas.py listar/foco/abrir devuelven el id (hWnd) "
+                     "por ventana: cerrar --id es la via sin danos colaterales")
     cmd = ["taskkill", "/PID", str(args.pid)]
     if args.arbol:
         cmd.append("/T")
@@ -340,13 +430,26 @@ def cmd_procesos_matar(args):
                nota="si es 'access denied': la app corre con mas privilegios "
                     "que este proceso (relanzar elevado no es posible desde "
                     "aqui; usa ejecutar --elevado antes de que abra)")
-    c.json_out({
+    item = {
         "ok": True,
         "matados": [args.pid],
         "arbol": bool(args.arbol),
         "forzado": bool(args.forzar),
         "salida_taskkill": salida[:300],
-    })
+    }
+    if visibles:
+        item["ventanas_del_pid"] = visibles
+    if args.forzar and len(visibles) > 1:
+        item["aviso"] = ("--forzar salto el gate multi-ventana: el taskkill "
+                         "cerro %d ventanas visibles del PID %d (posible "
+                         "trabajo ajeno — Notepad 11 comparte proceso). "
+                         "Verifica con ventanas.py listar." %
+                         (len(visibles), args.pid))
+    elif len(visibles) == 1 and not args.forzar:
+        item["aviso"] = ("el PID tenia exactamente 1 ventana visible: se "
+                         "mato el proceso y con ella (para no matar proceso "
+                         "ajeno usa ventanas.py cerrar --id)")
+    c.json_out(item)
 
 
 # --- ejecutar ---------------------------------------------------------------
@@ -511,12 +614,23 @@ def construir_parser():
     a = sp.add_parser("escribir", help="copiar TEXTO al clipboard")
     a.add_argument("texto", help="contenido literal a copiar (usa comillas)")
     a.add_argument("--respaldar", action="store_true",
-                   help="guardar el contenido previo en .tmp/clipboard_backup.txt")
+                   help="guardar el contenido previo en "
+                        ".tmp/clipboard_backup_<ts>.txt (rotativo, P2.4; "
+                        "luego: `portapapeles restaurar`)")
     a.add_argument("--pegar", action="store_true",
                    help="ademas pegar (ctrl+v via teclado.py; exige foco)")
     a.set_defaults(func=cmd_portapapeles_escribir)
     a = sp.add_parser("estado", help="hay texto? cuanto? (NUNCA el contenido)")
     a.set_defaults(func=cmd_portapapeles_estado)
+    a = sp.add_parser("restaurar", help="reescribe el portapapeles desde un "
+                      "respaldo SIN imprimir el contenido (P1.2-e)")
+    a.add_argument("--desde", metavar="RUTA",
+                   help="respaldo concreto (p. ej. el path del JSON de "
+                        "--respaldar); por defecto: el mas reciente")
+    a.add_argument("--ultimo", action="store_true",
+                   help="forzar explicito el respaldo mas reciente "
+                        "(es el default)")
+    a.set_defaults(func=cmd_portapapeles_restaurar)
 
     p = sub.add_parser("procesos", help="listar/matar por PID (tasklist/taskkill)")
     sp = p.add_subparsers(dest="accion", required=True, metavar="ACCION")

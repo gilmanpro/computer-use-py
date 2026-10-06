@@ -1,9 +1,10 @@
 # -*- coding: utf-8 -*-
 """glue_windows.py — GLUE EXCLUSIVO de Windows de la skill computer-use-py.
 
-FASE SEG2: los CLIs (monitores/pantalla/teclado/raton/ventanas/vigilar) viven
-en scripts/ raiz y son multi-OS: en win32 importan ESTE modulo (ruta historica
-intacta); en linux/darwin enrutan a scripts/linux|macos sin llegar aqui. La
+FASE SEG3: los CLIs (monitores/pantalla/teclado/raton/ventanas/vigilar) viven
+en scripts/ raiz y son multi-OS EN EL PROPIO PROCESO: en win32 importan ESTE
+modulo (ruta historica intacta); en linux/darwin usan su seccion con la
+libreria scripts/linux|macos/<so>_especiales.py sin llegar aqui. La
 pieza exclusivamente Windows restante en scripts/windows/ es
 win_especiales.py, que tambien importa este glue. Cada CLI lo importa PRIMERO.
 Efectos de borde deliberados al importarse:
@@ -46,15 +47,16 @@ import sys
 
 # --- Guard de plataforma (DEBE ir antes de ctypes.wintypes y de pyautogui) --
 # Este glue es EXCLUSIVO Windows; el resto del flujo usa scripts/ (los CLIs de
-# la raiz enrutan solos a su rama y nunca deberian llegar aqui). Si alguien lo
+# la raiz ejecutan en el propio proceso la ruta de su SO y nunca deberian
+# llegar aqui). Si alguien lo
 # importa directamente en otro SO, el fallo seria un AttributeError de windll o
 # un traceback de pyautogui: este guard lo convierte en el JSON canonico (rc 2,
 # mismo contrato que las ramas linux/ y macos/).
 if sys.platform != "win32":
     print(json.dumps({
         "error": "glue_windows.py es exclusivo WINDOWS; el resto del flujo "
-                 "usa scripts/ (los CLIs de la raiz enrutan a la rama de tu "
-                 "SO; para la suite: python autotest.py)",
+                 "usa scripts/ (los CLIs de la raiz ejecutan la ruta de tu "
+                 "SO en el propio proceso; para la suite: python autotest.py)",
         "sistema_operativo": sys.platform,
         # P0-4: `plataforma` canonica tambien en el guard (contrato uniforme).
         "plataforma": {"win32": "win", "linux": "linux",

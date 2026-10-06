@@ -21,11 +21,13 @@ tarea→comando · §12 VERIFICADO (fuentes) / [runtime]
 ## 1. Supuesto base: TODO se ejecuta sobre Python
 
 - El AGENTE solo invoca `py scripts/<script>.py <subcomando>` (raiz de scripts/,
-  FASE SEG2): verbos, JSON UTF-8 por stdout y error con "error" + exit 1. En
-  win32 esa ruta es la NATIVA; los CLIs raiz tambien valen en Linux/macOS
-  (enrutan a su motor). Lo exclusivamente-ventana/proceso/portapapeles/DPI va
+  FASE SEG3): verbos, JSON UTF-8 por stdout y error con "error" + exit 1. En
+  win32 esa ruta es la NATIVA; los CLIs raiz tambien valen en Linux/macOS,
+  donde ejecutan la ruta de SU SO en el propio proceso (las primitivas exclusivas
+  viven en las librerias `scripts/linux/linux_especiales.py` y
+  `scripts/macos/macos_especiales.py`). Lo exclusivamente-ventana/proceso/portapapeles/DPI va
   por `py scripts/windows/win_especiales.py <grupo> <accion>` (unico archivo
-  que queda en la rama). Los subprocess internos (`tasklist`, `taskkill`,
+  que queda en la carpeta). Los subprocess internos (`tasklist`, `taskkill`,
   `clip`, ShellExecute) son IMPLEMENTACION del dominio, no superficie del
   agente.
 - El glue (`scripts/glue_windows.py`) fija al importarse, en este orden
@@ -105,9 +107,13 @@ tarea→comando · §12 VERIFICADO (fuentes) / [runtime]
   antialiasing rompen); `--confidence` REQUIERE opencv-python, sin el
   NotImplementedError → el CLI degrada a coincidencia exacta y avisa.
 - Toda captura expone en JSON: `origen`, `px_por_unidad_coord` (factor TOTAL
-  imagen→coordenada, en Windows == `escala`), `escala`/`escala_y` (solo el
-  thumbnail `--max-lado` LANCZOS), `marco:"px_fisicos_virtual"`, `regla` y
-  `nota`. Rutas por defecto: `.tmp/capturas/` de la skill (guard anti-commit).
+  imagen→coordenada = imagen_px/fuente_px; en Windows es el INVERSO de
+  `escala`, y por eso la `regla` DIVIDE: `coord = origen + img / ppu`; FIX
+  W11 verificado en multimonitor real — con thumbnail ≠ nativo el valor
+  invertido descolocaba el clic un factor ppu²), `escala`/`escala_y` (solo el
+  thumbnail `--max-lado` LANCZOS, fuente→imagen), `marco:"px_fisicos_virtual"`,
+  `regla` y `nota`. Rutas por defecto: `.tmp/capturas/` de la skill (guard
+  anti-commit).
 
 ## 6. Portapapeles (win_especiales.py portapapeles)
 
@@ -203,7 +209,7 @@ tarea→comando · §12 VERIFICADO (fuentes) / [runtime]
 | Ejecutar elevado (UAC) | `win_especiales.py ejecutar "obj" --elevado` | ShellExecuteW runas |
 | DPI por monitor | `win_especiales.py dpi listar` | GetDpiForMonitor |
 | Freno humano | `vigilar.py arrancar --segundos N [--pausar-si-humano]` (proceso APARTE) | listener pynput + banderas .tmp |
-| Autovalidacion | `py autotest.py` (raiz skill) | suite scripts/autotest.py (win32 nativa) |
+| Autovalidacion | `py autotest.py` (raiz skill) | suite unificada `scripts/autotest.py`: bateria del SO anfitrion + checks de simetria SEG3 |
 
 ## 12. §VERIFICADO (fuentes citadas) / [runtime]
 
@@ -244,3 +250,51 @@ para re-verificar; leer, no ejecutar):
   efectos de escalas MIXTAS per-monitor-v2; fiabilidad activate()/close() por
   app; scroll por notch segun app; KEYEVENTF_UNICODE en conhost legacy;
   nombre formal del bloqueo UIPI; `activate()` sobre fullscreen de terceros.
+
+## 13. Lecciones runtime W11 (06/10/2026, 3 monitores)
+
+Verificadas en escritorio real durante PRUEBAS-TOTALES-W11 (drivers de .tmp,
+hoy cosechados como verbos de la skill) y re-verificadas en IMPL-K:
+
+1. **La barra de menú de Notepad W11 aparece con Alt y desplaza el lienzo
+   (TY+90)** — causa raíz de 3 esperas fallidas. Geometría segura: clic
+   hondo en `TY+160`; la primera fila de texto queda en ~`TY+90..110` solo
+   con el menú oculto. (Calibrado entre `LINE_Y=TY+90` y `TY+160` en los
+   drivers b3_v7/v8; el autotest sandbox usa el clic hondo.)
+2. **El sheet de guardado es una hoja DENTRO de la misma HWND**: `cerrar`
+   responde `ok:true` y la ventana PERSISTE. Resolver con el ladder
+   `cerrar --id N --descartar` (cerrar → ¿vive? → activar → alt+n →
+   tab+enter → verificación POR ID) — verbo propio desde IMPL-K; verificado
+   en vivo (modal `sheet-mismo-hwnd`, `desaparecio:true`). Contraste: el
+   diálogo `Abrir` de ctrl+a SÍ es HWND aparte con owner = la ventana
+   (diagnóstico: `foco --con-dueno` → `dueno.owner`).
+3. **Session-restore + tab-hijack: "la ventana nueva no siempre es nueva"**
+   (VERIFICADO 2× en IMPL-K): con Notepad 11 corriendo, `startfile` de un
+   .txt lo abre como PESTANA en la primera ventana — mismo hWnd (el diff de
+   `abrir --esperar-nueva` no ve nada) y el TITULO de la ventana ajena queda
+   secuestrado por el archivo. Ventana propia: combo `ctrl+shift+n` con
+   `--foco-id` sobre esa ventana + diff de hWnd. PELIGROS: cerrar pestañas
+   ajenas con `ctrl+w` tocó una pestaña equivocada en la prueba (NO es
+   seguro programáticamente); borrar el .txt con su pestaña abierta levanta
+   el sheet "No se encuentra el archivo" que bloquea el teclado de esa
+   ventana. La pista de título de `abrir` falla con títulos localizados
+   ("Bloc de notas") — de ahí `--esperar-nueva` por diff.
+4. **Un clic en el "wallpaper" de un secundario puede restaurar/activar
+   ventanas minimizadas del usuario** (incidentes B3d/B5d: tab residual
+   "en 199262 (gate de foco lo impidió; usuario activo)"). Antes de
+   clic/arrastre en un monitor secundario: `ventanas.py ocupantes x1 y1 x2
+   y2` (READ-ONLY) para confirmar zona libre.
+5. **No-ASCII + autocorrect W11**: la inyección ocurre pero el SO corrige el
+   texto ("raiz→raíz"), rompiendo asserts de título exacto. Workaround
+   verificado: `teclado.py escribir ... --via portapapeles`.
+6. **El caret XAML de Notepad no se pinta en el framebuffer y los píxeles
+   ClearType de glifos son estáticos** — detalle y remedio (muestrear antes
+   de esperar; `--sensibilidad brillo` o región sobre la fila real) en
+   `monitores-multi.md` §11. Desde IMPL-K el escaneo es verbo propio:
+   `pantalla.py esperar --auto-pixel --region x y w h`.
+
+Y su consecuencia de seguridad: **nunca `taskkill /IM notepad.exe`** —
+Notepad 11 comparte PROCESO entre ventanas/pestañas: el kill cierra el
+trabajo del usuario con rc=0 (incidente verificado; recuperación por
+session-restore+ctrl+z). Vías seguras: `ventanas.py cerrar --id N
+--descartar` y `procesos matar` con su gate multi-ventana (P0.2).

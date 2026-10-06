@@ -1,26 +1,36 @@
 # -*- coding: utf-8 -*-
 """_core.py — helpers GENERICOS multi-OS de computer-use-py.
 
-Desde FASE SEG2 la skill es MULTI-OS EN LA RAIZ: los CLIs de scripts/
-(monitores/pantalla/teclado/raton/ventanas/vigilar/autotest) son la entrada
-normal en los 3 SO, y las subcarpetas windows/ (solo win_especiales.py),
-linux/ y macos/ son el MOTOR EXCLUSIVO de cada SO. Este modulo vive en
-scripts/ raiz y lo importan tanto los CLIs (enrutador) como los modulos
-comunes (glue_windows.py, _compartido_linux.py, _compartido_mac.py).
+Desde FASE SEG3 la skill es MULTI-OS SIMETRICA EN LA RAIZ: los 7 CLIs de
+scripts/ (monitores/pantalla/teclado/raton/ventanas/vigilar/autotest) son LA
+IMPLEMENTACION de los 3 SO dentro del propio proceso (dispatch por
+sys.platform EN TIEMPO DE EJECUCION via modulo_sistema(), seccion 0c), y las
+subcarpetas windows/ (solo win_especiales.py), linux/ (solo
+linux_especiales.py) y macos/ (solo macos_especiales.py) guardan SOLO lo
+exclusivo de cada SO: librerias importables en CUALQUIER SO cuyo guard de
+plataforma vive unicamente en el __main__ de su CLI propio. Este modulo vive
+en scripts/ raiz y lo importan tanto los CLIs (para resolver el dispatch)
+como los 3 modulos exclusivos (glue_windows.py, linux_especiales.py y
+macos_especiales.py), que le reexportan sus helpers.
 
 QUE ES GENERICO Y POR QUE: todo lo que vive aqui es STDLIB PURO y no toca
 ninguna API del SO: sin pyautogui, sin pynput, sin ctypes.windll, sin X11/
-Quartz, sin subprocess de herramientas DEL SO (el subprocess del enrutador
-relanza OTRO PYTHON de la skill, no una utilidad del SO: sigue sin tocar
-API de plataforma), sin DPI ni guards de plataforma. Por eso puede vivir en
-scripts/ —RAIZ de los dominios— e importarse desde cualquier SO sin efectos
-secundarios. Es codigo que estaba DUPLICADO palabra-por-palabra (o
+Quartz, sin subprocess de herramientas DEL SO — y desde SEG3 este modulo no
+lance NINGUN proceso (el viejo enrutador SEG2 que re-lanzaba el Python de la
+rama fue ELIMINADO: el dispatch ocurre en el propio proceso), sin DPI ni
+guards de plataforma. Por eso puede vivir en scripts/ —RAIZ de los
+dominios— e importarse desde cualquier SO sin efectos secundarios. Es
+codigo que estaba DUPLICADO palabra-por-palabra (o
 esencialmente igual) en los tres _compartido* y en los scripts de rama; la
 segmentacion (FASE SEG) lo subio a esta unica copia:
 
-  0b. ENRUTADOR multi-OS (SEG2): destino_rama/plan_enrute/enrutar — los CLIs
-      raiz lo llaman cuando sys.platform NO es win32 para re-emitir VERBATIM
-      la salida del CLI de la rama destino (plan determinista y auditable).
+  0c. DISPATCH DE PLATAFORMA EN EL PROCESO (SEG3): modulo_sistema()/
+      so_no_soportado() — los CLIs raiz bindean `c = _core.modulo_sistema()`
+      en TIEMPO DE EJECUCION (no de import, para poder parchar
+      sys.platform en pruebas): win32 -> glue_windows.py, linux ->
+      linux/linux_especiales.py, darwin -> macos/macos_especiales.py; otra
+      plataforma responde el JSON de error rc 2 con el texto contractual
+      heredado del viejo enrute SEG2.
   1. SALIDA Y ERRORES: json_out/fail/plataforma (contrato P0-4: "plataforma"
      SIEMPRE presente), tocar/borrar/asegurar_capturas y la clase Parser
      (errores de argparse como JSON canonico, P1-7).
@@ -48,11 +58,12 @@ segmentacion (FASE SEG) lo subio a esta unica copia:
   8. DATOS compartidos: ALIAS_TECLAS_PYNPUT (tabla espanol->nombres pynput
      Key para win/linux; mac tiene su propia ALIAS_TECLAS_MAC por ser otro
      enum), ESQUEMA_URL (clasificador URL vs archivo) y BOTONES.
-   9. AUTOTEST DE ESTRUCTURA: problemas_estructura() audita esta separacion
-      (scripts/ raiz = los 7 CLIs multi-OS + _core.py + glue_windows.py + las
-      3 carpetas de motor; windows/ = SOLO win_especiales.py; ningun modulo
-      comun redefina un helper movido). Lo invocan la suite raiz (autotest.py)
-      y los autotests de las ramas linux/ y macos/.
+    9. AUTOTEST DE ESTRUCTURA: problemas_estructura() audita esta separacion
+       (scripts/ raiz = los 7 CLIs multi-OS + _core.py + glue_windows.py + las
+       3 carpetas de lo exclusivo; windows/ = SOLO win_especiales.py, linux/ =
+       SOLO linux_especiales.py, macos/ = SOLO macos_especiales.py; ningun
+       modulo exclusivo redefina un helper movido). Lo invocan la suite raiz
+       unificada (scripts/autotest.py) de FASE SEG3.
 
 QUE NO VIVE AQUI (por SO): guards de plataforma y DPI (SetProcessDpiAwareness
 — en el glue_windows.py de esta misma raiz, exclusivo win32),
@@ -70,18 +81,16 @@ TEXTOS CANONICOS: los mensajes compartidos usan el texto de la rama WINDOWS
 SO (xrandr, szDevice, cmd+shift+esc) la rama lo sigue pasando como parametro
 y su salida NO cambia.
 
-Uso: los CLIs de la raiz lo importan DIRECTO (viven en su misma carpeta); los
-motores linux/ y macos/ via el mecanismo sys.path de sus _compartido_*;
-glue_windows.py via sys.path propio. Forma historica desde una rama:
-
-    import os as _os, sys as _sys
-    _sys.path.insert(0, _os.path.dirname(_os.path.dirname(_os.path.abspath(__file__))))
-    import _core as _c
-    json_out, fail, tocar, borrar, asegurar_capturas = (_c.json_out, _c.fail,
-        _c.tocar, _c.borrar, _c.asegurar_capturas)
-    Parser, checar_abort, checar_pausa = _c.Parser, _c.checar_abort, _c.checar_pausa
-    DIR_TMP, DIR_CAPTURAS = _c.DIR_TMP, _c.DIR_CAPTURAS
-    ARCHIVO_ABORT, ARCHIVO_PAUSA = _c.ARCHIVO_ABORT, _c.ARCHIVO_PAUSA
+Uso: los 7 CLIs de la raiz lo importan DIRECTO (viven en su misma carpeta) y
+resuelven el dispatch con modulo_sistema(); glue_windows.py (raiz) y los
+modulos exclusivos scripts/linux/linux_especiales.py y
+scripts/macos/macos_especiales.py lo importan tras insertar scripts/ en su
+sys.path y REEXPORTAN los helpers de este modulo con la forma exacta
+`nombre = _core.nombre`, de modo que las secciones de cada SO en los CLIs
+raiz pueden llamar c.nombre(...) con el MISMO alias en cualquier plataforma
+(la auditoria problemas_redefiniciones() impone esa forma; el self-alias
+`c = sys.modules[__name__]` de los modulos exclusivos es legal: 'c' no es un
+helper movido).
 """
 
 import argparse
@@ -108,77 +117,53 @@ ARCHIVO_PAUSA = os.path.join(DIR_TMP, "PAUSA")
 _DIR_SCRIPTS = os.path.dirname(os.path.abspath(__file__))
 
 # ---------------------------------------------------------------------------
-# 0b) ENRUTADOR multi-OS de los CLIs de la raiz (FASE SEG2)
+# 0c) DISPATCH DE PLATAFORMA EN EL PROCESO (FASE SEG3: simetria total)
 # ---------------------------------------------------------------------------
-# Los 7 CLIs de scripts/ (monitores, pantalla, teclado, raton, ventanas,
-# vigilar, autotest) son la ENTRADA NORMAL en los 3 SO. En win32 ejecutan su
-# ruta historica INTACTA (glue_windows.py); en linux/darwin actuan como
-# enrutadores TRANSPARENTES: relanzan el CLI equivalente de su rama (el motor
-# exclusivo del SO) con los MISMOS argv y re-emiten stdout y exit code
-# VERBATIM. El plan se calcula en plan_enrute() (determinista y SIN efectos:
-# lo audita el autotest con la plataforma parcheada); enrutar() lo ejecuta.
-_RAMA_DE_PLAT = {"linux": "linux", "darwin": "macos"}
-_PISTA_SETUP = {
-    "linux": "setup del dominio Linux: references/linux-python.md §15 (pynput/"
-             "pillow + xdotool/wmctrl en X11, grim/ydotool en Wayland).",
-    "darwin": "setup del dominio macOS: references/macos-python.md §11 "
-              "(pynput==1.8.2, pyobjc-framework-Quartz, pillow) y permisos TCC §3.",
-}
+# Desde SEG3 los CLIs de la raiz YA NO relanzan la rama: ejecutan en el propio
+# proceso la ruta de su SO. El modulo de primitivas por plataforma es:
+#   win32  -> glue_windows.py        (raiz, exclusivo Windows)
+#   linux  -> linux/linux_especiales.py   (importable en cualquier SO: el guard
+#            de plataforma vive SOLO en su CLI __main__, nunca en el import)
+#   darwin -> macos/macos_especiales.py   (idem)
+# El CLI raiz hace, en TIEMPO DE EJECUCION (no de import, para que el
+# unittest.mock pueda parchar sys.platform):
+#
+#       c = _core.modulo_sistema()     # o modulo_sistema(plat=...) en pruebas
+#
+# y toda la seccion de ese SO llama c.<primitiva>() con el MISIMO alias: los
+# tres modulos reexportan los helpers genericos de _core (json_out, fail,
+# Parser, ...) y exponen MARCO + sus primitivas propias. Importable desde
+# cualquier SO (los pyautogui/pynput/Quartz/X11 van lazy dentro de funciones).
+_MODULO_SISTEMA = {"win32": ("", "glue_windows"),
+                   "linux": ("linux", "linux_especiales"),
+                   "darwin": ("macos", "macos_especiales")}
 
 
-def destino_rama(script, plat=None):
-    """(rama, ruta_absoluta) del CLI equivalente para sys.platform `plat`
-    (default: la actual): linux->scripts/linux, darwin->scripts/macos.
-    (None, None) en win32 y en plataformas sin rama."""
+def modulo_sistema(plat=None):
+    """Modulo de primitivas del SO actual (o del indicado `plat` en pruebas).
+    None si la plataforma no es win32/linux/darwin (el CLI responde entonces
+    so_no_soportado()). Inserta scripts/<rama> en sys.path solo cuando toca."""
+    import importlib
     plat = sys.platform if plat is None else plat
-    rama = _RAMA_DE_PLAT.get(plat)
-    if rama is None:
-        return None, None
-    return rama, os.path.join(_DIR_SCRIPTS, rama, script)
+    entrada = _MODULO_SISTEMA.get(plat)
+    if entrada is None:
+        return None
+    rama, nombre = entrada
+    if rama:
+        ruta = os.path.join(_DIR_SCRIPTS, rama)
+        if ruta not in sys.path:
+            sys.path.insert(0, ruta)
+    return importlib.import_module(nombre)
 
 
-def plan_enrute(script, plat=None, argv=None):
-    """Plan del enrute SIN ejecutar nada (auditable por el autotest con la
-    plataforma parcheada). Devuelve:
-      ("win",)                          -> win32: la ruta nativa sigue en el CLI
-      ("route", ruta, argv)             -> lanzar subprocess con argv verbatim
-      ("error", datos)                  -> datos = JSON de error listo (incluye
-                                           'plataforma'); rc contractual 2."""
-    plat = sys.platform if plat is None else plat
-    if plat == "win32":
-        return ("win",)
-    argv = list(sys.argv[1:] if argv is None else argv)
-    rama, ruta = destino_rama(script, plat)
-    canonica = _PLAT_MAP.get(plat, plat)
-    if rama is None:
-        return ("error", {"error": "%s: plataforma no soportada (%s); la entrada "
-                                   "multi-OS es scripts/<verbo>.py (raiz) solo en "
-                                   "win32, linux y darwin" % (script, plat),
-                          "sistema_operativo": plat, "plataforma": canonica})
-    if not os.path.isfile(ruta):
-        return ("error", {"error": "%s: la rama %s no esta instalada (falta %s): "
-                                   "%s" % (script, rama, ruta, _PISTA_SETUP.get(rama, "")),
-                          "sistema_operativo": plat, "plataforma": canonica,
-                          "esperaba": ruta})
-    return ("route", ruta, argv)
-
-
-def enrutar(script):
-    """Enruta a la rama del SO NO-windows (o JSON de error rc 2). NO retorna
-    nunca en linux/darwin: re-emite stdout/stderr y exit code del CLI de rama
-    VERBATIM (hereda la consola: bytes sin re-codificar). En win32 no debe
-    llamarse (el CLI importa glue_windows); si aun asi se llama, retorna para
-    no romper nada."""
-    plan = plan_enrute(script)
-    if plan[0] == "win":
-        return
-    if plan[0] == "route":
-        import subprocess
-        proc = subprocess.run([sys.executable, plan[1]] + [str(a) for a in plan[2]])
-        sys.exit(proc.returncode)
-    # error: mismo borde de salida que fail() (JSON UTF-8 indentado) pero rc 2
-    # (mal uso / entorno), como los guards de rama.
-    datos = plan[1]
+def so_no_soportado(script):
+    """Borde comun de los CLIs raiz para plataformas sin ruta (rc 2): mismo
+    JSON contractual que producia el viejo enrutador SEG2. NO retorna."""
+    datos = {"error": "%s: plataforma no soportada (%s); la entrada "
+                      "multi-OS es scripts/<verbo>.py (raiz) solo en "
+                      "win32, linux y darwin" % (script, sys.platform),
+             "sistema_operativo": sys.platform,
+             "plataforma": _PLAT_MAP.get(sys.platform, sys.platform)}
     print(json.dumps(datos, ensure_ascii=False, indent=2))
     sys.exit(2)
 
@@ -589,33 +574,47 @@ BOTONES = ("left", "right", "middle")
 
 
 # ---------------------------------------------------------------------------
-# 9) Autotest de estructura multi-OS (invocado por la suite de la raiz y los
-#    autotests linux/ y macos/): audita que la separacion generico/exclusivo
-#    y el layout SEG2 se mantengan.
+# 9) Autotest de estructura multi-OS (invocado por la suite raiz unificada
+#    scripts/autotest.py de FASE SEG3): audita que la separacion
+#    generico/exclusivo y el layout SEG3 se mantengan.
 # ---------------------------------------------------------------------------
 RAMAS = ("windows", "linux", "macos")
-# FASE SEG2: los 7 CLIs multi-OS VIVEN en scripts/ raiz (en win32 ejecutan la
-# ruta historica; en linux/darwin enrutan a su rama). __pycache__ es residuo
-# de import, se tolera. Si creciera un modulo generico mas, anadirlo aqui y
-# abajo en la evidencia del check.
+# FASE SEG3: los 7 CLIs multi-OS VIVEN en scripts/ raiz y son LA
+# IMPLEMENTACION de los 3 SO en el propio proceso (dispatch sys.platform en
+# runtime via modulo_sistema); las carpetas windows/ linux/ macos/ guardan
+# SOLO el modulo exclusivo de su SO. __pycache__ es residuo de import, se
+# tolera. Si creciera un modulo generico mas, anadirlo aqui y abajo en la
+# evidencia del check.
 CLI_RAIZ = ("autotest.py", "monitores.py", "pantalla.py", "raton.py",
             "teclado.py", "ventanas.py", "vigilar.py")
 GLUE_RAIZ = "glue_windows.py"  # glue EXCLUSIVO Windows (DPI/pyautogui/ctypes)
 CORE_RAIZ = "_core.py"
 ESPERADO_RAIZ_SCRIPTS = (frozenset(RAMAS) | frozenset(CLI_RAIZ)
                          | {CORE_RAIZ, GLUE_RAIZ, "__pycache__"})
-# Unico archivo que queda en scripts/windows/ (sus CLIs subieron a la raiz).
+# Unico archivo que queda en cada carpeta de lo exclusivo (los demas subieron
+# a la raiz o fueron retirados con el enrute SEG2):
 ESPERADO_WINDOWS_RAMAS = frozenset({"win_especiales.py", "__pycache__"})
-# Modulo comun por rama (ruta relativa a scripts/): el de windows es ahora el
-# glue de la RAIZ; linux/macos conservan el suyo dentro de su carpeta.
+ESPERADO_LINUX_RAMAS = frozenset({"linux_especiales.py", "__pycache__"})
+ESPERADO_MACOS_RAMAS = frozenset({"macos_especiales.py", "__pycache__"})
+_RAMA_ESPERADA = {
+    "windows": (ESPERADO_WINDOWS_RAMAS, "win_especiales.py"),
+    "linux": (ESPERADO_LINUX_RAMAS, "linux_especiales.py"),
+    "macos": (ESPERADO_MACOS_RAMAS, "macos_especiales.py"),
+}
+# Modulo exclusivo por rama (ruta relativa a scripts/): el de windows es el
+# glue de la RAIZ; linux/macos tienen su libreria dentro de su carpeta. Los
+# tres los resuelve modulo_sistema() en runtime.
 _MODULO_COMUN = {"windows": GLUE_RAIZ,
-                 "linux": os.path.join("linux", "_compartido_linux.py"),
-                 "macos": os.path.join("macos", "_compartido_mac.py")}
+                 "linux": os.path.join("linux", "linux_especiales.py"),
+                 "macos": os.path.join("macos", "macos_especiales.py")}
 
-# Nombres que VIVEN aqui. Ningun _compartido de rama puede redefinirlos
+# Nombres que VIVEN aqui. Ningun modulo exclusivo (glue_windows.py,
+# linux_especiales.py, macos_especiales.py) puede redefinirlos
 # (def/class propio o asignacion que no venga de _core): solo reexportarlos
-# con la forma exacta `nombre = _core.nombre` para que los scripts sigan
-# llamando c.nombre(...). HELPERS_COMUNES es la lista que audita el check.
+# con la forma exacta `nombre = _core.nombre` para que los CLIs raiz sigan
+# llamando c.nombre(...) en cualquier SO. HELPERS_COMUNES es la lista que
+# audita el check. El self-alias `c = sys.modules[__name__]` de los modulos
+# exclusivos es legal: 'c' no figura en esta lista.
 HELPERS_COMUNES = (
     "json_out", "fail", "tocar", "borrar", "asegurar_capturas", "plataforma",
     "Parser", "checar_abort", "checar_pausa", "checar_aborto_espera",
@@ -636,11 +635,13 @@ _RE_ASIGNACION = re.compile(r"^([A-Za-z_][A-Za-z0-9_]*)[ \t]*=(?!=)")
 
 
 def problemas_inventario_scripts():
-    """Check 1 de estructura (FASE SEG2): scripts/ raiz contiene SOLO los 7
+    """Check 1 de estructura (FASE SEG3): scripts/ raiz contiene SOLO los 7
     CLIs multi-OS + _core.py + glue_windows.py + las carpetas windows/ linux/
     macos/ (tolerado __pycache__); los 9 archivos obligatorios EXISTEN; y
-    scripts/windows/ conserva SOLO win_especiales.py. Devuelve lista de
-    violaciones; vacio = OK."""
+    CADA carpeta de lo exclusivo conserva SOLO su modulo especial:
+    windows/ = win_especiales.py, linux/ = linux_especiales.py y
+    macos/ = macos_especiales.py. Devuelve lista de violaciones; vacio = OK.
+    (Respecto a SEG2 se elimino la auditoria del enrute: ya no existe.)"""
     errores = []
     for nombre in sorted(os.listdir(_DIR_SCRIPTS)):
         if nombre not in ESPERADO_RAIZ_SCRIPTS:
@@ -651,18 +652,21 @@ def problemas_inventario_scripts():
               if not os.path.isfile(os.path.join(_DIR_SCRIPTS, n))]
     if faltan:
         errores.append("faltan archivos obligatorios en scripts/ raiz: %s" % faltan)
-    win_dir = os.path.join(_DIR_SCRIPTS, "windows")
-    if os.path.isdir(win_dir):
-        for nombre in sorted(os.listdir(win_dir)):
-            if nombre not in ESPERADO_WINDOWS_RAMAS:
-                errores.append("scripts/windows/ debe conservar SOLO "
-                               "win_especiales.py; sobra %r" % nombre)
+    for rama in RAMAS:
+        esperada, unico = _RAMA_ESPERADA[rama]
+        carpeta = os.path.join(_DIR_SCRIPTS, rama)
+        if os.path.isdir(carpeta):
+            for nombre in sorted(os.listdir(carpeta)):
+                if nombre not in esperada:
+                    errores.append("scripts/%s/ debe conservar SOLO %s; sobra %r"
+                                   % (rama, unico, nombre))
     return errores
 
 
 def problemas_redefiniciones():
-    """Check 2 de estructura: ningun modulo comun de rama (glue_windows.py en
-    la raiz; _compartido_linux/mac en sus carpetas) redefina un helper de
+    """Check 2 de estructura: ningun modulo exclusivo (glue_windows.py en
+    la raiz; linux/linux_especiales.py y macos/macos_especiales.py en sus
+    carpetas) redefina un helper de
     HELPERS_COMUNES con def/class propio ni con una asignacion que no venga
     de _core (la unica forma admitida es `nombre = _core.nombre`). Devuelve
     lista de violaciones; vacio = OK."""
@@ -696,5 +700,6 @@ def problemas_redefiniciones():
 
 def problemas_estructura():
     """Auditoria combinada de la separacion generico/exclusivo (la invocan
-    los 3 autotests de rama como checks de estructura)."""
+    los checks de estructura de la suite raiz unificada scripts/autotest.py
+    de FASE SEG3)."""
     return problemas_inventario_scripts() + problemas_redefiniciones()

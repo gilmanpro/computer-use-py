@@ -11,10 +11,16 @@
 
 ## Contrato central: TODO se ejecuta sobre Python
 
-La superficie del agente es **Python + JSON idéntico al dominio Windows**
-(`scripts/macos/`). Cuando un script llama por subprocess a `screencapture`,
+La superficie del agente es **Python + JSON idéntico al dominio Windows**:
+la entrada normal es `scripts/<X>.py` de la **raíz** (multi-OS, FASE SEG3), que
+en macOS ejecuta su ruta **en el propio proceso** cargando como librería
+`scripts/macos/macos_especiales.py` (osascript/System Events, screencapture,
+Quartz, tablas kVK/alias de teclado, hints TCC, escala Retina). Lo exclusivo
+queda aparte en su CLI solo-macOS de diagnóstico: `python3
+scripts/macos/macos_especiales.py tcc|screencapture|monitores-quartz|ventanas-se|open`.
+Cuando un script llama por subprocess a `screencapture`,
 `osascript` u `open`, sigue siendo código Python quien las invoca: el agente
-solo corre `python3 scripts/macos/X.py <verbo>` y lee JSON.
+solo corre `python3 scripts/<X>.py <verbo>` y lee JSON.
 
 ## Índice
 
@@ -56,15 +62,21 @@ solo corre `python3 scripts/macos/X.py <verbo>` y lee JSON.
   (VERIFICADO man). `CGDisplayBounds` da PUNTOS.
 - **REGLA — el JSON de TODA captura trae `origen`, `px_por_unidad_coord`,
   `escala`, `escala_retina`, `marco` y `regla`**: el campo ÚNICO que necesita
-  el agente es `px_por_unidad_coord = escala × escala_retina` (factor TOTAL
-  imagen→punto: Retina y --max-lado ya absorbidos) →
+  el agente es `px_por_unidad_coord = escala_retina / escala` (factor TOTAL
+  imagen→punto: Retina y --max-lado ya absorbidos; `escala` = fuente→imagen,
+  por eso la regla DIVIDE) →
   `coord_lógica = origen + coord_imagen / px_por_unidad_coord`; NO multipliques
-  `escala` y `escala_retina` a mano (quedan como desglose). `escala` = solo el
+  `escala` y `escala_retina` a mano (quedan como desglose). ANTES decía
+  `escala × escala_retina` — espejo del bug W11 corregido en Windows: con
+  `--max-lado` el clic salía descolocado un factor ppu². `escala` = solo el
   recorte --max-lado. Los CLICS van SIEMPRE en puntos lógicos, nunca en píxeles
   de la imagen. La escala Retina se mide en cada captura comparando
   `CGDisplayBounds` (puntos) vs tamaño PIL del PNG; si la vía `-D` sin mapa no
   permite medirla, `px_por_unidad_coord` sale `null` (verifica con una captura
-  de prueba [runtime]).
+  de prueba [runtime]). **VERIFICADO [pendiente runtime]: la fórmula corregida
+  se marca §VERIFICADO aquí SOLO tras prueba `--max-lado` + clic por regla en
+  Mac real** (auditada en la suite unificada como check ESTATICO de lectura de
+  fórmula).
 - macOS no tiene API DPI-equivalente de Windows (no hay `SetProcessDpiAwareness`):
   el problema análogo es Retina, resuelto por la regla anterior.
 
@@ -85,6 +97,8 @@ solo corre `python3 scripts/macos/X.py <verbo>` y lee JSON.
 - **Fallo silencioso típico**: sin Accesibilidad la emisión CGEvent puede no
   llegar sin excepción (mismo principio que las apps elevadas de Windows):
   SIEMPRE re-verificar con captura. `vigilar.py` reporta `is_trusted`.
+- Catálogo de hints de los 3 permisos TCC (lo exclusivo, CLI solo-macOS):
+  `python3 scripts/macos/macos_especiales.py tcc`.
 
 ## 4. Capturas: `screencapture` (VERIFICADO man)
 
@@ -104,6 +118,10 @@ screencapture -C ...                     # -C incluye cursor (solo no interactiv
 - `-R` con x/y negativos: **[runtime]** (el man no lo dice); los rects reales
   se leen de CGDisplayBounds y el JSON siempre expone `origen`.
 - windowid para `-l`: requeriría `CGWindowListCopyWindowInfo` — fuera de fase.
+- PNG crudo directo de `screencapture` (lo exclusivo, CLI solo-macOS para
+  diagnóstico): `python3 scripts/macos/macos_especiales.py screencapture --rect
+  0 0 800 600` (y `monitores-quartz` / `ventanas-se` para listados crudos); el
+  flujo normal sigue siendo `python3 scripts/pantalla.py capturar ...`.
 
 ## 5. Ratón: pynput → CGEvent (VERIFICADO fuente)
 

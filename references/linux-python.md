@@ -3,20 +3,30 @@
 > Dominio LINUX (investigacion 05/10/2026; 10 `webfetch`, uno fallido — fuentes
 > en §VERIFICADO). Regla dura: afirmacion sin URL/verbatim lleva [runtime] =
 > confirmar en la maquina Linux destino (NO se valido en escritorio desde
-> Windows). Los scripts de `scripts/linux/` replican el contrato JSON Windows.
+> Windows). Los CLIs de la raiz `scripts/<verbo>.py` replican el contrato JSON
+> Windows en Linux (FASE SEG3: ejecutan la ruta de Linux en el propio proceso);
+> las primitivas exclusivas X11/Wayland viven en la libreria
+> `scripts/linux/linux_especiales.py`, que tiene ademas su CLI propio solo-Linux
+> (`sesion`, `xrandr`, `grim`, `portapapeles leer|escribir`, `wayland-status`).
 
 ## Indice
 
 §1 TODO-via-Python · §2 deteccion · §3 piramide X11 · §4 piramide Wayland ·
 §5 ventanas X11 · §6 monitores X11 + quirk X-screens · §7 marco de coords ·
 §8 ventanas/compositores Wayland · §9 captura · §10 teclado · §11 raton ·
-§12 portapapeles · §13 quirks · §14 tabla tarea→ruta · §15 VERIFICADO/INCERTO
+§12 portapapeles · §13 quirks · §14 tabla tarea→ruta · §15 VERIFICADO/INCERTO ·
+§16 DEPENDENCIAS (setup)
 
 ## 1. Supuesto base: TODO se ejecuta sobre Python
 
-- El AGENTE solo invoca `python3 scripts/linux/<script>.py <subcomando>`:
-  verbos, JSON UTF-8 por stdout y error con "error" + exit 1, identicos al
-  contrato Windows. Los `subprocess` internos (xdotool, wmctrl, grim, wtype,
+- El AGENTE solo invoca `python3 scripts/<script>.py <subcomando>` (CLIs de la
+  RAIZ, multi-OS desde SEG3): verbos, JSON UTF-8 por stdout y error con
+  "error" + exit 1, identicos al
+  contrato Windows. En Linux ese CLI raiz ejecuta su ruta EN EL PROPIO PROCESO
+  cargando como LIBRERIA `scripts/linux/linux_especiales.py`: por X11 usa
+  xdotool/wmctrl/xrandr y por Wayland la ruta se resuelve VIA esa libreria
+  (grim/wtype/ydotool/swaymsg/hyprctl orquestados desde el CLI raiz). Los
+  `subprocess` internos (xdotool, wmctrl, grim, wtype,
   ydotool...) son IMPLEMENTACION, no "ejecucion del agente". X11 y Wayland se
   atienden desde los MISMOS verbos: el script elige la ruta por sesion (§2) y
   lo declara en el campo "via".
@@ -26,7 +36,8 @@
 - `XDG_SESSION_TYPE` (publicada por logind) = `x11|wayland`; reserva:
   `WAYLAND_DISPLAY` puesta ⇒ wayland; `DISPLAY` puesta ⇒ x11; nada ⇒ incognito.
   [runtime] (no fetcheado aqui). Implementado en
-  `_compartido_linux.deteccion_sesion()`; toda salida trae "sesion".
+  `linux_especiales.deteccion_sesion()` (libreria; el CLI `linux_especiales.py
+  sesion` la expone); toda salida trae "sesion".
 
 ## 3. Piramide X11: pyautogui/pynput SI funcionan
 
@@ -152,13 +163,22 @@
   outputs"; `-c` incluye cursor; `-` como destino = stdout. Para `pixel` los
   scripts escriben PNG temporal en .tmp + PIL en vez de stdout (la envoltura
   run() es texto-seguro; binario crudo seria factible [runtime]).
-- JSON de TODA captura (SPEC P0-3/P0-4): `origen`, `marco:"px_layout"`,
-  `plataforma:"linux"`, `escala`/`escala_y` (SOLO el recorte --max-lado),
-  `factor_grim` (el factor global que grim aplica en Wayland, "highest of all
-  outputs", man verbatim — `null` si la fuente swaymsg no lo informa
-  [runtime]) y `px_por_unidad_coord` = escala × factor_grim: el campo UNICO
-  para re-escalar (`coord_layout = origen + px_imagen / px_por_unidad_coord`),
-  como en las otras ramas.
+- JSON de TODA captura (SPEC P0-3/P0-4 + FIX IMPL-K P0.3): `origen`,
+  `marco:"px_layout"`, `plataforma:"linux"`, `escala`/`escala_y` (factor
+  fuente→imagen del recorte --max-lado), `factor_grim` (el factor global que
+  grim aplica en Wayland, "highest of all outputs", man verbatim — `null` si
+  la fuente swaymsg no lo informa [runtime]) y
+  **`px_por_unidad_coord` = factor_grim / escala** (con escala=1.0 sin
+  --max-lado): el campo UNICO para re-escalar con la regla que DIVIDE
+  (`coord_layout = origen + px_imagen / px_por_unidad_coord`), como en las
+  otras ramas. ANTES estaba invertido (`escala × factor_grim`) — era el espejo
+  exacto del bug W11 corregido en Windows: con `--max-lado` el clic salia
+  descolocado un factor ppu² (derivado algebraicamente de
+  `_core.escalas_thumbnail` = fuente/imagen). **VERIFICADO [pendiente
+  runtime]: la formula nueva queda marcada §VERIFICADO aqui SOLO tras la
+  prueba `--max-lado` + clic por regla en SO Linux real** (no hay Linux en la
+  máquina de las pruebas W11; la suite unificada la audita como check
+  ESTATICO de lectura de formula).
 - Banderas de freno (P1-5/P1-6): `vigilar.py arrancar` (port X11; en Wayland
   error JSON honesto) crea `.tmp/ABORT` (dura: corta acciones al inicio y en
   los interpolados) y con `--pausar-si-humano` `.tmp/PAUSA` (suave: el arranque
@@ -218,7 +238,7 @@
   pyautogui/pynput mantienen estado interno — tras abort a media pulsacion
   suelta (`keyUp`/`ydotool key CODE:0`) y re-captura [runtime].
 
-## 14. Tabla tarea → ruta X11 → ruta Wayland (scripts/linux/*)
+## 14. Tabla tarea → ruta X11 → ruta Wayland (CLI raiz `scripts/<verbo>.py`; primitivas en `linux_especiales.py`)
 
 | Tarea | X11 | Wayland |
 |---|---|---|
@@ -268,3 +288,36 @@ ImageGrab.html); pyautogui/pynput fuera de X11 (se espera fallo o solo
 XWayland); signos de scroll pynput en Linux; botones 6/7; pyperclip;
 focus-stealing prevention GNOME; permisos/absoluto uinput de ydotool; scroll
 Wayland; negativos de layout Wayland; auto-repeticion de teclas mantenidas.
+
+## 16. DEPENDENCIAS (setup: pip + apt/dnf)
+
+- pip — la rama Python usa el mismo set que el padre Windows (SKILL.md §2):
+  `pip3 install pyautogui pynput pyperclip pillow` (versiones verificadas:
+  pyautogui 0.9.54, pynput 1.8.2 —con <=1.8.1 el scroll se duplica—,
+  pyperclip 1.11.0, Pillow >= 6.2.0). `pygetwindow` NO aplica (es de la rama
+  Windows: las ventanas van por xdotool/wmctrl/swaymsg, §5/§8).
+  `opencv-python` OPCIONAL, solo para `localizar --confidence`. La captura
+  pyautogui puede pedir python3-tk (§3) [runtime]. En Wayland nativo
+  pyautogui/pynput NO aplican (§4): la ruta vive solo de las herramientas del
+  SO + Pillow (composicion del PNG de grim, §9).
+- Herramientas del SO en PATH — los scripts las buscan con shutil.which y, si
+  faltan, responden hint apt|dnf accionable; la fuente CANONICA es
+  HINTS_PAQUETES de `scripts/linux/linux_especiales.py`. Nombres apt
+  verificados en el rastreo de manpages (xdotool, wmctrl, xrandr=
+  x11-xserver-utils, grim, ydotool, sway=swaymsg); el resto [runtime] (§15):
+
+  | Herramienta | apt (Debian/Ubuntu) | dnf (Fedora/RHEL) |
+  |---|---|---|
+  | xdotool | xdotool | xdotool |
+  | wmctrl | wmctrl | wmctrl |
+  | xrandr | x11-xserver-utils | xorg-x11-utils |
+  | scrot | scrot | scrot |
+  | grim | grim | grim |
+  | slurp | slurp | slurp |
+  | wtype | wtype | wtype |
+  | ydotool | ydotool (arranca `ydotoold`; grupo `input`) | idem |
+  | kdotool | kdotool [runtime] | kdotool [runtime] |
+  | swaymsg | sway | sway |
+  | hyprctl | hyprland [runtime] | hyprland [runtime] |
+  | xclip | xclip | xclip |
+  | xdg-open | xdg-utils | xdg-utils |
