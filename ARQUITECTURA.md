@@ -206,7 +206,7 @@ py scripts/ventanas.py abrir "<ruta\al\archivo.txt>" --esperar 8 --esperar-nueva
 py scripts/pantalla.py capturar --max-lado 1280       :: leer el PNG con vision
 py scripts/teclado.py escribir "Hola" --foco-id <id-del-json-abrir>
 py scripts/raton.py click --x 640 --y 300
-py scripts/pantalla.py esperar --milisegundos 600
+py scripts/pantalla.py esperar --milisegundos 480
 py scripts/pantalla.py capturar                       :: verificacion
 py scripts/ventanas.py cerrar --id <id> --descartar
 
@@ -341,7 +341,9 @@ OMITE, no falla), batería real de otro SO no portada (Linux 53+15, macOS
 47+15 checks equivalentes, retiradas con las suites de rama), modo seguro (el
 sandbox espera `--con-escritura`), asociación `.txt` que no es un editor, o
 "pendiente @D" en contrato documentado. Un FAIL en modo lectura = bug de un CLI
-de la raíz: reportar, no parchar a ciegas.
+de la raíz: reportar, no parchar a ciegas — regla general (SKILL.md §1): la
+skill **no se auto-mejora**; editar `scripts/`, `references/` o estos docs
+durante el uso solo bajo **pedido explícito del usuario**.
 
 ## 6. Decisiones que ya no están (anti-regresión)
 

@@ -38,7 +38,7 @@ Subcomandos:
              coincide con el marco histórico).
   pixel      Color RGB de un pixel en coords VIRTUALES (negativos vía
              ImageGrab de 1 px; el primario sigue por pyautogui.pixel).
-  esperar    Pausa: fija con --milisegundos N (default 400, cap 30000) o
+  esperar    Pausa: fija con --milisegundos N (default 320, cap 30000) o
              adaptativa con --pixel X Y --color r,g,b y --cambia|--estable M
              (poll ~100 ms; el FAILSAFE sigue intacto). IMPL-K: --mientras
              "argv..." lanza el DISPARADOR como hijo y el JSON suma
@@ -55,7 +55,7 @@ Ejemplos (desde la carpeta computer-use-py):
   py scripts/pantalla.py capturar --monitor virtual
   py scripts/pantalla.py capturar --region -800 0 600 400 --archivo trozo.png
   py scripts/pantalla.py tamano --virtual
-  py scripts/pantalla.py esperar --milisegundos 600
+  py scripts/pantalla.py esperar --milisegundos 480
   py scripts/pantalla.py esperar --pixel 300 200 --color 255,255,255 --cambia --timeout 5
   py scripts/pantalla.py esperar --mientras "py scripts/teclado.py tecla enter"
   py scripts/pantalla.py esperar --auto-pixel --region 300 200 420 120 --mientras "py scripts/teclado.py escribir Z"
@@ -525,7 +525,7 @@ def _esperar_normal(args, proc, argv):
         "ms_esperados": ms,
         "modo": "fijo",
         "marco": c.MARCO,
-        "nota": "sueño simple (default 400 ms, cap 30000) para dejar renderizar "
+        "nota": "sueño simple (default 320 ms, cap 30000) para dejar renderizar "
                 "la UI; FAILSAFE intacto; la bandera ABORT de vigilar.py corta "
                 "la espera; PAUSA la posterga",
     }
@@ -630,8 +630,11 @@ def construir_parser_win():
                        "por pixel (--pixel --color --cambia|--estable), "
                        "AUTO-PIXEL (--auto-pixel --region) y con disparador "
                        "hijo (--mientras)")
-    p.add_argument("--milisegundos", type=int, default=400, metavar="N",
-                   help="pausa fija en ms (default 400, cap 30000)")
+    # TIEMPOS-K: default 400->320 (-20% exacto, piso 250 respetado): es la
+    # espera de RENDER del loop (accion->esperar->capturar); la evidencia del
+    # autotest 06/10 mostro 0 FAIL con 320. Cap 30000 intacto (limite C).
+    p.add_argument("--milisegundos", type=int, default=320, metavar="N",
+                   help="pausa fija en ms (default 320, cap 30000)")
     p.add_argument("--pixel", type=int, nargs=2, metavar=("X", "Y"),
                    help="espera adaptativa: pixel a vigilar (coords virtuales)")
     p.add_argument("--color", metavar="R,G,B",
@@ -723,7 +726,7 @@ Subcomandos:
   posicion   Posicion actual del cursor (solo X11: xdotool getmouselocation).
   pixel      Color RGB de un pixel: X11 pyautogui.pixel; Wayland grim 1x1 a
              stdout (man: "-" escribe la imagen por stdout) + PIL.
-  esperar    Pausa fija --milisegundos N (default 400, cap 30000) o adaptativa
+  esperar    Pausa fija --milisegundos N (default 320, cap 30000) o adaptativa
              --pixel X Y --color r,g,b con --cambia|--estable M (poll ~100 ms).
   localizar  Busca una imagen (locateOnScreen). SOLO X11: en Wayland
              pyautogui no inyecta/lee nativo => error honesto.
@@ -734,7 +737,7 @@ Ejemplos (desde la carpeta computer-use-py, en la maquina Linux):
   python3 scripts/pantalla.py capturar --monitor virtual
   python3 scripts/pantalla.py capturar --region 1920 0 600 400
   python3 scripts/pantalla.py tamano --virtual
-  python3 scripts/pantalla.py esperar --milisegundos 600
+  python3 scripts/pantalla.py esperar --milisegundos 480
   python3 scripts/pantalla.py esperar --pixel 300 200 --color 255,255,255 --cambia
   python3 scripts/pantalla.py localizar boton.png --confidence 0.9
 """
@@ -1087,7 +1090,7 @@ def _esperar_normal_linux(args, proc, argv):
         "modo": "fijo",
         "marco": c.MARCO,
         "sesion": c.deteccion_sesion(),
-        "nota": "sueno simple (default 400 ms, cap 30000) para dejar "
+        "nota": "sueno simple (default 320 ms, cap 30000) para dejar "
                 "renderizar la UI; la bandera ABORT del .tmp corta la espera; "
                 "PAUSA la posterga",
     }
@@ -1198,8 +1201,11 @@ def construir_parser_linux():
     p = sub.add_parser("esperar", help="pausa fija (--milisegundos) o "
                        "adaptativa por pixel (--pixel --color "
                        "--cambia|--estable)")
-    p.add_argument("--milisegundos", type=int, default=400, metavar="N",
-                   help="pausa fija en ms (default 400, cap 30000)")
+    # TIEMPOS-K: default 400->320 (-20% exacto, piso 250 respetado): es la
+    # espera de RENDER del loop (accion->esperar->capturar); la evidencia del
+    # autotest 06/10 mostro 0 FAIL con 320. Cap 30000 intacto (limite C).
+    p.add_argument("--milisegundos", type=int, default=320, metavar="N",
+                   help="pausa fija en ms (default 320, cap 30000)")
     p.add_argument("--pixel", type=int, nargs=2, metavar=("X", "Y"),
                    help="espera adaptativa: pixel a vigilar (coords layout)")
     p.add_argument("--color", metavar="R,G,B",
@@ -1282,7 +1288,7 @@ Ejemplos (desde la carpeta computer-use-py, en el Mac):
   python3 scripts/pantalla.py capturar
   python3 scripts/pantalla.py capturar --monitor 1 --max-lado 1280
   python3 scripts/pantalla.py capturar --region 100 80 640 480
-  python3 scripts/pantalla.py esperar --milisegundos 600
+  python3 scripts/pantalla.py esperar --milisegundos 480
   python3 scripts/pantalla.py pixel 300 200
 """
 
@@ -1661,7 +1667,7 @@ def _esperar_normal_mac(args, proc, argv):
         "ms_esperados": ms,
         "modo": "fijo",
         "marco": c.MARCO,
-        "nota": "sueno simple (default 400 ms, cap 30000) para dejar "
+        "nota": "sueno simple (default 320 ms, cap 30000) para dejar "
                 "renderizar la UI; la bandera ABORT de vigilar.py corta la "
                 "espera; PAUSA la posterga",
     }
@@ -1807,8 +1813,11 @@ def construir_parser_mac():
     p = sub.add_parser("esperar", help="pausa fija (--milisegundos) o "
                         "adaptativa por pixel (--pixel --color "
                         "--cambia|--estable)")
-    p.add_argument("--milisegundos", type=int, default=400, metavar="N",
-                   help="pausa fija en ms (default 400, cap 30000)")
+    # TIEMPOS-K: default 400->320 (-20% exacto, piso 250 respetado): es la
+    # espera de RENDER del loop (accion->esperar->capturar); la evidencia del
+    # autotest 06/10 mostro 0 FAIL con 320. Cap 30000 intacto (limite C).
+    p.add_argument("--milisegundos", type=int, default=320, metavar="N",
+                   help="pausa fija en ms (default 320, cap 30000)")
     p.add_argument("--pixel", type=int, nargs=2, metavar=("X", "Y"),
                    help="espera adaptativa: punto a vigilar (puntos globales)")
     p.add_argument("--color", metavar="R,G,B",

@@ -413,8 +413,10 @@ def construir_parser():
 
     p = sub.add_parser("mantener", help="mantener una tecla pulsada N segundos")
     p.add_argument("tecla", help="nombre de tecla")
-    p.add_argument("--segundos", type=float, default=1.0,
-                   help="duracion del mantenimiento (0.05-60, por defecto 1)")
+    # TIEMPOS-K: mantener 1.0->0.8 s (-20%, piso 250 ok): duracion DEFAULT del
+    # hold (press->sleep->release); el rango 0.05-60 s es limite C intocable.
+    p.add_argument("--segundos", type=float, default=0.8,
+                   help="duracion del mantenimiento (0.05-60, por defecto 0.8)")
     p.set_defaults(func=cmd_mantener)
 
     return parser
@@ -874,8 +876,10 @@ def construir_parser_linux():
 
     p = sub.add_parser("mantener", help="mantener una tecla pulsada N segundos")
     p.add_argument("tecla", help="nombre de tecla")
-    p.add_argument("--segundos", type=float, default=1.0,
-                   help="duracion (0.05-60, default 1)")
+    # TIEMPOS-K: mantener 1.0->0.8 s (-20%, piso 250 ok): duracion DEFAULT del
+    # hold (press->sleep->release); el rango 0.05-60 s es limite C intocable.
+    p.add_argument("--segundos", type=float, default=0.8,
+                   help="duracion (0.05-60, default 0.8)")
     p.set_defaults(func=cmd_mantener_linux)
 
     return parser
@@ -1342,8 +1346,10 @@ def construir_parser_mac():
 
     p = sub.add_parser("mantener", help="mantener una tecla pulsada N segundos")
     p.add_argument("tecla", help="nombre de tecla")
-    p.add_argument("--segundos", type=float, default=1.0,
-                   help="duracion del mantenimiento (0.05-60, por defecto 1)")
+    # TIEMPOS-K: mantener 1.0->0.8 s (-20%, piso 250 ok): duracion DEFAULT del
+    # hold (press->sleep->release); el rango 0.05-60 s es limite C intocable.
+    p.add_argument("--segundos", type=float, default=0.8,
+                   help="duracion del mantenimiento (0.05-60, por defecto 0.8)")
     p.set_defaults(func=cmd_mantener_mac)
 
     return parser

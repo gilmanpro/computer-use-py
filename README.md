@@ -76,7 +76,7 @@ py scripts/pantalla.py capturar
 py scripts/ventanas.py foco
 py scripts/ventanas.py activar "Nombre de la ventana"
 py scripts/raton.py click --x 640 --y 300
-py scripts/pantalla.py esperar --milisegundos 500
+py scripts/pantalla.py esperar --milisegundos 400
 py scripts/pantalla.py capturar   :: verificacion: ¿ocurrio lo esperado?
 ```
 
@@ -122,3 +122,7 @@ puntos lógicos globales. Detalle, verificaciones y trampas (como el
 - `SKILL.md` es la guía de uso para el agente; `references/` guarda el
   conocimiento verificado (pirámide Windows, API de librerías, multi-monitor,
   Linux/macOS por SO, comandos nativos sin Python).
+- La skill **no se auto-mejora**: ante un defecto o idea, se **reporta** al
+  usuario (con evidencia; nota opcional en `.tmp/`); editar `scripts/`,
+  `references/` o estos docs durante el uso requiere un **pedido explícito**
+  del usuario (el árbol está validado en escritorio real y publicado).

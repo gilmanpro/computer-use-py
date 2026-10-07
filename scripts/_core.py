@@ -328,7 +328,9 @@ def cap_duracion(d):
 
 
 def cap_ms(ms):
-    """Milisegundos del sueno fijo, acotados a [0, 30000] (default 400)."""
+    """Milisegundos del sueno fijo, acotados a [0, 30000] (default 320 desde
+    TIEMPOS-K: -20% sobre los 400 hist6ricos del `esperar`, piso 250; el cap
+    30000 es limite C intocable)."""
     return min(max(int(ms), 0), 30000)
 
 

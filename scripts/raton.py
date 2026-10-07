@@ -66,7 +66,7 @@ Ejemplos (desde la carpeta computer-use-py):
   py scripts/raton.py mover 640 300 --duracion 0.2    # Windows (python3 en otros SO)
   py scripts/raton.py click --x 640 --y 300 --boton right
   py scripts/raton.py click --x -800 --y 300          # secundario: pynput
-  py scripts/raton.py arrastrar 100 100 400 350 --duracion 0.5
+  py scripts/raton.py arrastrar 100 100 400 350 --duracion 0.4
   py scripts/raton.py arrastrar -800 400 300 400      # secundario->primario
   py scripts/raton.py scroll --vertical -5 --x 800 --y 400
   py scripts/raton.py scroll --horizontal 3
@@ -361,8 +361,11 @@ def construir_parser():
     p.add_argument("y1", type=int, help="origen Y (virtual)")
     p.add_argument("x2", type=int, help="destino X (virtual)")
     p.add_argument("y2", type=int, help="destino Y (virtual)")
-    p.add_argument("--duracion", type=float, default=0.5,
-                   help="segundos totales del arrastre (por defecto 0.5)")
+    # TIEMPOS-K: arrastre 0.5->0.4 s (-20%, piso 250 ok): duracion default del
+    # interpolado press->mover->release; el retardo por paso se deriva de esta
+    # cifra (duracion/pasos), no es constante propia. Verificado en sandbox W11.
+    p.add_argument("--duracion", type=float, default=0.4,
+                   help="segundos totales del arrastre (por defecto 0.4)")
     p.add_argument("--boton", default="left", metavar="BOTON",
                    help="boton a mantener: left|right|middle (validado en handler)")
     p.set_defaults(func=cmd_arrastrar)
@@ -434,7 +437,7 @@ Subcomandos:
 Ejemplos (desde la carpeta computer-use-py, en la maquina Linux):
   python3 scripts/raton.py mover 640 300 --duracion 0.2
   python3 scripts/raton.py click --x 640 --y 300 --boton right
-  python3 scripts/raton.py arrastrar 100 100 400 350 --duracion 0.5
+  python3 scripts/raton.py arrastrar 100 100 400 350 --duracion 0.4
   python3 scripts/raton.py scroll --vertical -5 --x 800 --y 400
   python3 scripts/raton.py posicion
 """
@@ -807,8 +810,9 @@ def construir_parser_linux():
     p.add_argument("y1", type=int, help="origen Y (layout)")
     p.add_argument("x2", type=int, help="destino X (layout)")
     p.add_argument("y2", type=int, help="destino Y (layout)")
-    p.add_argument("--duracion", type=float, default=0.5,
-                   help="segundos totales del arrastre (default 0.5)")
+    # TIEMPOS-K: arrastre 0.5->0.4 s (espejo de la rama Windows, -20%, piso ok).
+    p.add_argument("--duracion", type=float, default=0.4,
+                   help="segundos totales del arrastre (default 0.4)")
     p.add_argument("--boton", default="left", metavar="BOTON",
                    help="boton a mantener: left|right|middle (validado en handler)")
     p.set_defaults(func=cmd_arrastrar_linux)
@@ -899,7 +903,7 @@ Ejemplos (desde la carpeta computer-use-py, en el Mac):
   python3 scripts/raton.py mover 640 300 --duracion 0.2
   python3 scripts/raton.py click --x 640 --y 300 --boton right
   python3 scripts/raton.py click --x 2000 --y 300 --doble
-  python3 scripts/raton.py arrastrar 100 100 400 350 --duracion 0.5
+  python3 scripts/raton.py arrastrar 100 100 400 350 --duracion 0.4
   python3 scripts/raton.py scroll --vertical -5 --x 800 --y 400
   python3 scripts/raton.py scroll --horizontal 3
 """
@@ -1318,8 +1322,9 @@ def construir_parser_mac():
     p.add_argument("y1", type=int, help="origen Y (puntos)")
     p.add_argument("x2", type=int, help="destino X (puntos)")
     p.add_argument("y2", type=int, help="destino Y (puntos)")
-    p.add_argument("--duracion", type=float, default=0.5,
-                   help="segundos totales del arrastre (por defecto 0.5)")
+    # TIEMPOS-K: arrastre 0.5->0.4 s (espejo de la rama Windows, -20%, piso ok).
+    p.add_argument("--duracion", type=float, default=0.4,
+                   help="segundos totales del arrastre (por defecto 0.4)")
     p.add_argument("--boton", default="left", metavar="BOTON",
                    help="boton a mantener: left|right|middle (validado en handler)")
     p.set_defaults(func=cmd_arrastrar_mac)

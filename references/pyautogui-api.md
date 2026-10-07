@@ -167,7 +167,7 @@ v.moveTo(x, y); v.resizeTo(w, h)    # move()/resize() son INCREMENTALES
 | `write('ñ émoji')` | descartado en silencio (§3); usar pynput o portapapeles |
 | `FAILSAFE=False` | elimina el único freno humano |
 | Automatizar sobre app elevada | input ignorado en silencio (§7) |
-| `screenshot()` justo tras una acción sin dormir | PAUSE no cubre animaciones/diálogos: dormir ~0.4 s |
+| `screenshot()` justo tras una acción sin dormir | PAUSE no cubre animaciones/diálogos: dormir ~0.3 s (TIEMPOS-K: era ~0.4 s) |
 
 ## 9. Verificado vs pendiente-de-runtime
 

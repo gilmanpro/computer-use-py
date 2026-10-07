@@ -428,7 +428,8 @@ def _cerrar_descartar(ventana):
         c.fail("close() fallo sobre id %s (%r): %s: %s"
                % (hwnd, titulo_res, type(exc).__name__, exc),
                pista="reintenta sin --descartar y resuelve el modal a mano")
-    time.sleep(1.0)
+    time.sleep(0.8)  # TIEMPOS-K: 1.0->0.8 (-20%, piso ok): margen post-close()
+    # para que la ventana desaparezca antes del chequeo POR ID (sandbox W18 ok).
     cerrado = not _vive(hwnd)
     tipo = None
     def _modales_aparte():
@@ -451,15 +452,18 @@ def _cerrar_descartar(ventana):
             if vivo is not None:
                 try:
                     vivo.activate()
-                    time.sleep(0.4)
+                    time.sleep(0.3)  # TIEMPOS-K: 0.4->0.3 (-20%, piso ok): asentado
+                    # del activate antes de alt+n; si aun no hay foco el guard lo dice.
                 except Exception:
                     pass  # sin foco: igual se emite; la verificacion diria
             pyautogui.hotkey("alt", "n")
-            time.sleep(1.0)
+            time.sleep(0.8)  # TIEMPOS-K: 1.0->0.8 (-20%, piso ok): respuesta del
+            # sheet "No guardar" antes de re-verificar vida por id.
             if _vive(hwnd):
                 pyautogui.press("tab")
                 pyautogui.press("enter")
-                time.sleep(1.0)
+                time.sleep(0.8)  # TIEMPOS-K: 1.0->0.8 (-20%, piso ok): cierre del
+                # sheet via tab+enter antes de la re-verificacion por id.
         nuevos = _modales_aparte()
         if nuevos and tipo == "sheet-mismo-hwnd":
             tipo = "hwnd-aparte"
@@ -1941,7 +1945,9 @@ def cmd_abrir_mac(args):
             pares_nuevos = [[r["app"], r["titulo"]] for r in nuevas]
             break
         c.checar_abort()
-        c.time.sleep(0.5)
+        # TIEMPOS-K: 0.5->0.4 (-20%, piso ok): cadencia del sondeo abrir-mac
+        # (diff del par app+titulo via osascript, caro: bajarlo mas no aporta).
+        c.time.sleep(0.4)
 
     if nuevo is not None and args.esperar_nueva:
         resultado["ventana"] = c._estado_item(nuevo)
