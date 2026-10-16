@@ -1,8 +1,0 @@
-docs: plantillas de issues para pedir mejoras y seccion Mejora en README
-
-Solicitud de mejora (verbo/robustez/SO/docs con area concreta) y bug de
-script (comando, JSON esperado vs obtenido, entorno y checks de
-seguridad), mas la seccion Mejora esta skill enlazandolas. Sincronizado
-con el arbol local validado (0 cambios de contenido, sanitizado 0 hits).
-
-Co-authored-by: CommandCodeBot <noreply@commandcode.ai>
