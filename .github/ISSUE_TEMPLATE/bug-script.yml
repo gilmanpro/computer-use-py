@@ -1,0 +1,37 @@
+name: Bug de script
+title: "[Bug] "
+labels: [bug]
+body:
+  - type: input
+    id: comando
+    attributes:
+      label: Comando ejecutado
+      placeholder: "py scripts/pantalla.py capturar --max-lado 1280"
+    validations:
+      required: true
+  - type: textarea
+    id: esperado
+    attributes:
+      label: JSON o salida esperada
+      placeholder: '{"archivo": "...", "plataforma": "windows", ...}'
+    validations:
+      required: true
+  - type: textarea
+    id: obtenido
+    attributes:
+      label: JSON o salida obtenida
+      description: Pega la salida COMPLETA, incluida la clave `error` si la hubo (es JSON a propósito: ayuda a diagnosticar).
+    validations:
+      required: true
+  - type: input
+    id: entorno
+    attributes:
+      label: Entorno
+      placeholder: "P. ej.: Windows 11, 2 monitores 150%, pyautogui 0.9.54, pynput 1.8.2, app elevada: no"
+  - type: checkboxes
+    id: seguridad
+    attributes:
+      label: Comprobaciones de seguridad
+      options:
+        - label: La acción no era irreversible (borrar/enviar/pagar) sin confirmación humana
+        - label: Las cuatro esquinas del monitor primario no estaban en FAILSAFE cuando ocurrió

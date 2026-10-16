@@ -114,6 +114,15 @@ por pynput (Windows). En Linux es el screen/compositor y en macOS los
 puntos lógicos globales. Detalle, verificaciones y trampas (como el
 `region=` que da negro): `references/monitores-multi.md`.
 
+## Mejora esta skill
+
+La skill **no se auto-mejora durante el uso** (esa es su regla), pero crece
+con peticiones explícitas revisadas por su autor. Si algo falta o falla:
+
+- **¿Falta una capacidad?** → [Solicitud de mejora](https://github.com/gilmanpro/computer-use-py/issues/new?template=solicitud-mejora.yml): nuevo verbo, soporte de SO o robustez, con el área concreta (ventanas, ratón, teclado, visión, monitores, seguridad...).
+- **¿Un script falla?** → [Bug de script](https://github.com/gilmanpro/computer-use-py/issues/new?template=bug-script.yml): comando, JSON esperado vs obtenido y entorno — los CLIs responden JSON precisamente para que el diagnóstico sea exacto.
+- **¿Prefieres código?** → Pull requests bienvenidos sobre `scripts/` y `references/`, siempre con `py autotest.py` en verde (modo lectura) y respetando la simetría SEG3 (un `<so>_especiales.py` por carpeta, dispatch en los 6 CLIs, guards intactos).
+
 ## Notas del repo
 
 - Los archivos temporales (capturas PNG, banderas `ABORT`/`PAUSA`, pruebas)

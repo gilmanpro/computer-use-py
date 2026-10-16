@@ -1,0 +1,49 @@
+name: Solicitud de mejora
+title: "[Mejora] "
+labels: [mejora]
+body:
+  - type: dropdown
+    id: tipo
+    attributes:
+      label: Tipo de solicitud
+      options:
+        - Nuevo verbo o acción (algo que la skill no puede hacer aún)
+        - Mejora de robustez de un script existente
+        - Soporte o corrección para un SO / versión concreta
+        - Mejora de documentación (SKILL.md, references/, ARQUITECTURA.md)
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Área
+      options:
+        - Ventanas (abrir, mover, foco, ocupantes)
+        - Ratón (clic, arrastrar, scroll)
+        - Teclado (escribir, combos, unicode)
+        - Pantalla / visión (capturas, esperar, localizar)
+        - Monitores (multi-monitor, DPI, coordenadas virtuales)
+        - Portapapeles / procesos / elevación
+        - Seguridad (FAILSAFE, ABORT/PAUSA, watchdog)
+        - Linux (X11 / Wayland)
+        - macOS (Quartz / TCC / Retina)
+    validations:
+      required: true
+  - type: textarea
+    id: que-falta
+    attributes:
+      label: ¿Qué necesitas que la skill pueda hacer?
+      description: Describe la tarea concreta de escritorio con el máximo detalle posible.
+      placeholder: "P. ej.: poder fijar la ventana activa en un monitor concreto antes de teclear, para apps que pierden el foco."
+    validations:
+      required: true
+  - type: textarea
+    id: ejemplo
+    attributes:
+      label: Comandos actuales y ejemplo de uso (prompt real)
+      placeholder: "P. ej.: hoy hago X con py scripts/ventanas.py ... y el resultado falla cuando..."
+  - type: input
+    id: entorno
+    attributes:
+      label: Entorno
+      placeholder: "P. ej.: Windows 11 23H2, 2 monitores 150% DPI, pyautogui 0.9.54, pynput 1.8.2"
